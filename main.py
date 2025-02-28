@@ -1,32 +1,37 @@
-import carla
-import random
 import time
 
-MAX_VEHICLES = 100
+from src.utils.carla_connector import connect_to_carla, spawn_vehicle
+from src.models.v2x_messages import CAMGenerator, DENMGenerator
+from config.settings import CARLA_HOST, CARLA_PORT, CARLA_TIMEOUT
 
 def main():
-    client = carla.Client('localhost', 2000)
-    client.set_timeout(10.0)
+    print("Connecting to Carla simulator...")
+    client, world = connect_to_carla(CARLA_HOST, CARLA_PORT, CARLA_TIMEOUT)
+    
+    if not client:
+        print("Failed to connect to Carla. Make sure the simulator is running.")
+        return
+    
+    print("Successfully connected to Carla simulator!")
 
-    world = client.get_world()
+    vehicle = spawn_vehicle(world, 'model3')
 
-    blueprint_library = world.get_blueprint_library()
-    vehicle_bp = blueprint_library.filter('model3')[0]
+    cam_generator = CAMGenerator(vehicle)
+    denm_generator = DENMGenerator(vehicle)
 
-    for _ in range(MAX_VEHICLES):
-        spawn_point = random.choice(world.get_map().get_spawn_points())
-        try:
-            vehicle = world.spawn_actor(vehicle_bp, spawn_point)
-            print(f"Vehicle spawned: {vehicle.id}")
-        except:
-            print("Error while spawning vehicle")
-            continue
-
-        sleep_time = random.uniform(1, 2)
-        time.sleep(sleep_time)    
-
-if __name__ == "__main__":
     try:
-        main()
+        while True:
+            cam_generator.broadcast()
+
+            denm_message = denm_generator.generate_message("accident", (0, 0), "Car crash")
+            denm_generator.broadcast(denm_message)
+        
+            time.sleep(1)
+
     except KeyboardInterrupt:
-        print("Script interrupted by user")
+        print("\nSimulation interrupted by user")
+    
+    print("Simulation ended")
+
+if __name__ == '__main__':
+    main()

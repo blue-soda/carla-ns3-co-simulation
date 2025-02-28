@@ -1,0 +1,3 @@
+CARLA_HOST = 'localhost'
+CARLA_PORT = 2000
+CARLA_TIMEOUT = 10.0
