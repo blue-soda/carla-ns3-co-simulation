@@ -1,5 +1,7 @@
 import carla
 import random
+import time
+
 from typing import Tuple, Optional
 
 def connect_to_carla(host: str, port: int, timeout: float) -> Tuple[Optional[carla.Client], Optional[carla.World]]:
@@ -105,3 +107,34 @@ def destroy_actors(world: carla.World) -> None:
     except Exception as e:
         print(f"Error destroying actors: {e}")
         return None
+
+def follow_vehicle(world: carla.World, vehicle: carla.Vehicle, stop_event=None) -> None:
+    """
+    Set spectator to follow a vehicle
+    
+    Args:
+        world: Carla world object
+        vehicle: Carla vehicle object
+        stop_event: Threading event to signal when to stop following
+    """
+    spectator = world.get_spectator()
+    
+    camera_bp = world.get_blueprint_library().find('sensor.camera.rgb')
+    camera_transform = carla.Transform(carla.Location(x=-4, z=4), carla.Rotation(pitch=-25))
+    camera = world.spawn_actor(camera_bp, camera_transform, attach_to=vehicle)
+    spectator.set_transform(camera.get_transform())
+
+    try:
+        while True:
+            try:
+                if stop_event and stop_event.is_set():
+                    break
+                    
+                spectator.set_transform(camera.get_transform())
+                time.sleep(0.01)
+            except KeyboardInterrupt:
+                print("\nCamera follow interrupted by user")
+                break
+
+    except Exception as e:
+        print(f"Error setting spectator transform: {e}")
