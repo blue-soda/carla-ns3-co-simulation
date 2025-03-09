@@ -4,7 +4,8 @@ import time
 
 from typing import Tuple, Optional
 
-def connect_to_carla(host: str, port: int, timeout: float) -> Tuple[Optional[carla.Client], Optional[carla.World]]:
+def connect_to_carla(host: str, port: int, timeout: float, synchronous: bool = False, 
+                    fixed_delta_seconds: float = 0.05) -> Tuple[Optional[carla.Client], Optional[carla.World]]:
     """
     Connect to a running Carla simulator
     
@@ -12,6 +13,8 @@ def connect_to_carla(host: str, port: int, timeout: float) -> Tuple[Optional[car
         host: Carla server host
         port: Carla server port
         timeout: Connection timeout in seconds
+        synchronous: If True, run CARLA in synchronous mode
+        fixed_delta_seconds: Fixed time step for synchronous mode
         
     Returns:
         Tuple of (client, world) if connection successful, (None, None) otherwise
@@ -20,6 +23,14 @@ def connect_to_carla(host: str, port: int, timeout: float) -> Tuple[Optional[car
         client = carla.Client(host, port)
         client.set_timeout(timeout)
         world = client.get_world()
+        
+        if synchronous:
+            settings = world.get_settings()
+            settings.synchronous_mode = True
+            settings.fixed_delta_seconds = fixed_delta_seconds
+            world.apply_settings(settings)
+            print(f"CARLA running in synchronous mode with {fixed_delta_seconds}s fixed time step")
+            
         return client, world
     except Exception as e:
         print(f"Error connecting to Carla: {e}")
