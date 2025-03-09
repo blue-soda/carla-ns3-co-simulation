@@ -1,3 +1,5 @@
+# NOT READY YET ONLY FOR EDU PURPOSES
+
 #!/bin/bash
 set -e
 
