@@ -45,9 +45,8 @@ def process_ns3_message(message):
     # For example, trigger vehicle behaviors based on received V2X messages
 
 def main():
-    print("Connecting to Carla simulator in synchronous mode...")
-    client, world = connect_to_carla(CARLA_HOST, CARLA_PORT, CARLA_TIMEOUT, 
-                                     synchronous=True, fixed_delta_seconds=0.05)
+    print("Connecting to Carla simulator")
+    client, world = connect_to_carla(CARLA_HOST, CARLA_PORT, CARLA_TIMEOUT)
     
     if not client or not world:
         print("Failed to connect to Carla. Make sure the simulator is running.")
@@ -79,7 +78,6 @@ def main():
     thread.start()
 
     try:
-        simulation_step = 0
         while True:
             # Generate and broadcast CAM message
             cam_message = cam_generator.broadcast()
@@ -87,22 +85,12 @@ def main():
             # Send CAM to ns-3
             bridge.send_v2x_message(cam_message)
             
-            # Every 10 seconds, generate a DENM
-            if simulation_step % 200 == 0:  # Assuming 0.05s time steps
-                denm_message = denm_generator.generate_message("roadHazard", "Obstacle on road", "medium")
-                DENMGenerator.broadcast(denm_message)
-                bridge.send_v2x_message(denm_message)
             
             # Collect all vehicle data and send to ns-3
             vehicle_data = collect_vehicle_data(world)
             bridge.send_vehicle_states(vehicle_data)
             
-            # Tick the simulation
-            world.tick()
-            simulation_step += 1
-            
-            # Small sleep to prevent CPU overload
-            time.sleep(0.01)
+            time.sleep(1)
             
     except KeyboardInterrupt:
         print("\nSimulation interrupted by user")
