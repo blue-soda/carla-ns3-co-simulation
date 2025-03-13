@@ -7,8 +7,30 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <string.h>
+#include <nlohmann/json.hpp>
 
 using namespace ns3;
+using json = nlohmann::json;
+
+void ProcessJsonData(const std::string& data) {
+  try {
+    json vehicles = json::parse(data);
+    
+    for (const auto& vehicle : vehicles) {
+      int id = vehicle["id"];
+      auto position = vehicle["position"];
+      auto rotation = vehicle["rotation"];
+      auto velocity = vehicle["velocity"];
+      std::cout << "Vehicle ID: " << id << "\n";
+      std::cout << "Position - x: " << position["x"] << ", y: " << position["y"] << ", z: " << position["z"] << "\n";
+      std::cout << "Rotation - Pitch: " << rotation["pitch"] << ", Yaw: " << rotation["yaw"] << ", Roll: " << rotation["roll"] << "\n";
+      std::cout << "Velocity - x: " << velocity["x"] << ", y: " << velocity["y"] << ", z: " << velocity["z"] << "\n";
+      std::cout << "---------------------------\n";
+    }
+  } catch (json::exception& e) {
+    std::cerr << "JSON parsing error: " << e.what() << "\n";
+  }
+}
 
 void SocketServerThread()
 {
@@ -45,22 +67,13 @@ void SocketServerThread()
   std::cout << "Server ready, waiting for connection on port 5556...\n";
 
   client_fd = accept(server_fd, (sockaddr*)&address, (socklen_t*)&addrlen);
-
-  std::cout << "Client connected.\n" << client_fd << "\n";
-
   if (client_fd < 0) {
     perror("accept failed");
     close(server_fd);
     return;
   }
 
-  std::cout << "Connected: " << inet_ntoa(address.sin_addr)
-            << ":" << ntohs(address.sin_port) << "\n";
-
-  // Send initial handshake message
-  const char* init_msg = "NS-3 bridge connected\n";
-  send(client_fd, init_msg, strlen(init_msg), 0);
-
+  std::cout << "Client connected: " << inet_ntoa(address.sin_addr) << ":" << ntohs(address.sin_port) << "\n";
 
   while (true) {
     memset(buffer, 0, sizeof(buffer));
@@ -76,9 +89,8 @@ void SocketServerThread()
 
     buffer[bytes] = '\0';
     std::cout << "Received (" << bytes << " bytes): " << buffer << "\n";
-
-    // Simple echo for testing purposes
-    send(client_fd, buffer, bytes, 0);
+        
+    ProcessJsonData(std::string(buffer));
   }
 
   close(client_fd);
@@ -97,14 +109,11 @@ int main(int argc, char** argv)
 
   std::thread server_thread(SocketServerThread);
 
-  // Schedule periodic keep-alive to ensure simulator doesn't stop prematurely
   Simulator::Schedule(Seconds(1.0), &KeepAlive);
-
   Simulator::Stop(Seconds(3600));
   Simulator::Run();
 
   server_thread.join();
-
   Simulator::Destroy();
 
   std::cout << "Simulation finished.\n";

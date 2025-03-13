@@ -35,6 +35,8 @@ def collect_vehicle_data(world):
             }
         })
     
+    print(f"Collected vehicle data: {json.dumps(vehicle_data, indent=2)}")
+
     return vehicle_data
 
 def process_ns3_message(message):
@@ -65,7 +67,7 @@ def main():
         bridge.stop()
         return
     
-    spawn_vehicles(world, 10, ['cybertruck'])  # Reduced number for testing
+    spawn_vehicles(world, 2, ['cybertruck'])  # Reduced number for testing
     set_autopilot(world, True)
     
     # Initialize V2X message generators
@@ -73,17 +75,17 @@ def main():
     denm_generator = DENMGenerator(ego_vehicle)
 
     # Setup camera follow
-    stop_event = threading.Event()
-    thread = threading.Thread(target=follow_vehicle, args=(world, ego_vehicle, stop_event))
-    thread.start()
+    # stop_event = threading.Event()
+    # thread = threading.Thread(target=follow_vehicle, args=(world, ego_vehicle, stop_event))
+    # thread.start()
 
     try:
         while True:
             # Generate and broadcast CAM message
-            cam_message = cam_generator.broadcast()
+            # cam_message = cam_generator.broadcast()
             
             # Send CAM to ns-3
-            bridge.send_v2x_message(cam_message)
+            # bridge.send_v2x_message(cam_message)
             
             
             # Collect all vehicle data and send to ns-3
@@ -97,8 +99,8 @@ def main():
     finally:
         try:
             # Clean up
-            stop_event.set()
-            thread.join(timeout=2)
+            # stop_event.set()
+            # thread.join(timeout=2)
             bridge.stop()
             destroy_actors(world)
             
