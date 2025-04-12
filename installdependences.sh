@@ -3,7 +3,7 @@ set -e
 
 # Cheak is sudo or not
 if [ "$EUID" -ne 0 ]
-  then echo "Please run with sudo privileges"
+  then echo "[ERROR] Please run with sudo privileges"
   exit
 fi
 
@@ -14,4 +14,4 @@ sudo apt-get install -y build-essential autoconf automake libboost-all-dev libzm
                         libsqlite3-dev cmake libc6-dev libc6-dev-i386 libclang-dev \
                         nlohmann-json3-dev
 
-echo "Dependencies installation completed"
+echo "[INFO] Dependencies installation completed"

@@ -1,13 +1,15 @@
-#include "ns3/core-module.h"
-#include <iostream>
-#include <thread>
-#include <cstring>
 #include <arpa/inet.h>
-#include <unistd.h>
-#include <sys/socket.h>
 #include <netinet/in.h>
 #include <string.h>
+#include <sys/socket.h>
+#include <unistd.h>
+
+#include <cstring>
+#include <iostream>
 #include <nlohmann/json.hpp>
+#include <thread>
+
+#include "ns3/core-module.h"
 
 using namespace ns3;
 using json = nlohmann::json;
@@ -15,16 +17,20 @@ using json = nlohmann::json;
 void ProcessJsonData(const std::string& data) {
   try {
     json vehicles = json::parse(data);
-    
+
     for (const auto& vehicle : vehicles) {
       int id = vehicle["id"];
       auto position = vehicle["position"];
       auto rotation = vehicle["rotation"];
       auto velocity = vehicle["velocity"];
       std::cout << "Vehicle ID: " << id << "\n";
-      std::cout << "Position - x: " << position["x"] << ", y: " << position["y"] << ", z: " << position["z"] << "\n";
-      std::cout << "Rotation - Pitch: " << rotation["pitch"] << ", Yaw: " << rotation["yaw"] << ", Roll: " << rotation["roll"] << "\n";
-      std::cout << "Velocity - x: " << velocity["x"] << ", y: " << velocity["y"] << ", z: " << velocity["z"] << "\n";
+      std::cout << "Position - x: " << position["x"] << ", y: " << position["y"]
+                << ", z: " << position["z"] << "\n";
+      std::cout << "Rotation - Pitch: " << rotation["pitch"]
+                << ", Yaw: " << rotation["yaw"]
+                << ", Roll: " << rotation["roll"] << "\n";
+      std::cout << "Velocity - x: " << velocity["x"] << ", y: " << velocity["y"]
+                << ", z: " << velocity["z"] << "\n";
       std::cout << "---------------------------\n";
     }
   } catch (json::exception& e) {
@@ -32,8 +38,7 @@ void ProcessJsonData(const std::string& data) {
   }
 }
 
-void SocketServerThread()
-{
+void SocketServerThread() {
   int server_fd, client_fd;
   sockaddr_in address{};
   int addrlen = sizeof(address);
@@ -73,11 +78,12 @@ void SocketServerThread()
     return;
   }
 
-  std::cout << "Client connected: " << inet_ntoa(address.sin_addr) << ":" << ntohs(address.sin_port) << "\n";
+  std::cout << "Client connected: " << inet_ntoa(address.sin_addr) << ":"
+            << ntohs(address.sin_port) << "\n";
 
   while (true) {
     memset(buffer, 0, sizeof(buffer));
-    ssize_t bytes = recv(client_fd, buffer, sizeof(buffer)-1, 0);
+    ssize_t bytes = recv(client_fd, buffer, sizeof(buffer) - 1, 0);
 
     if (bytes < 0) {
       perror("recv error");
@@ -89,7 +95,7 @@ void SocketServerThread()
 
     buffer[bytes] = '\0';
     std::cout << "Received (" << bytes << " bytes): " << buffer << "\n";
-        
+
     ProcessJsonData(std::string(buffer));
   }
 
@@ -97,13 +103,9 @@ void SocketServerThread()
   close(server_fd);
 }
 
-void KeepAlive()
-{
-  Simulator::Schedule(Seconds(1.0), &KeepAlive);
-}
+void KeepAlive() { Simulator::Schedule(Seconds(1.0), &KeepAlive); }
 
-int main(int argc, char** argv)
-{
+int main(int argc, char** argv) {
   CommandLine cmd;
   cmd.Parse(argc, argv);
 
