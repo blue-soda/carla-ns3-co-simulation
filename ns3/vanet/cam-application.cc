@@ -15,7 +15,7 @@ NS_LOG_COMPONENT_DEFINE("CamApplication");
 
 NS_OBJECT_ENSURE_REGISTERED(CamSender);
 
-TypeId CamSender::GetTypeId(void) {
+TypeId CamSender::GetTypeId() {
   static TypeId tid = TypeId("ns3::CamSender")
                           .SetParent<Application>()
                           .SetGroupName("Applications")
@@ -24,7 +24,7 @@ TypeId CamSender::GetTypeId(void) {
 }
 
 CamSender::CamSender()
-    : m_socket(0),
+    : m_socket(nullptr),
       m_vehicleId(0),
       m_interval(Seconds(1.0)),
       m_radius(1000),
@@ -33,15 +33,15 @@ CamSender::CamSender()
   m_jitterRng = CreateObject<UniformRandomVariable>();
 }
 
-CamSender::~CamSender() { m_socket = 0; }
+CamSender::~CamSender() { m_socket = nullptr; }
 
-void CamSender::SetVehicleId(uint32_t id) { m_vehicleId = id; }
+void CamSender::SetVehicleId(const uint32_t id) { m_vehicleId = id; }
 
-void CamSender::SetInterval(Time interval) { m_interval = interval; }
+void CamSender::SetInterval(const Time& interval) { m_interval = interval; }
 
-void CamSender::SetBroadcastRadius(uint16_t radius) { m_radius = radius; }
+void CamSender::SetBroadcastRadius(const uint16_t radius) { m_radius = radius; }
 
-void CamSender::StartApplication(void) {
+void CamSender::StartApplication() {
   m_running = true;
 
   if (!m_socket) {
@@ -58,7 +58,7 @@ void CamSender::StartApplication(void) {
   ScheduleNextCam();
 }
 
-void CamSender::StopApplication(void) {
+void CamSender::StopApplication() {
   m_running = false;
 
   if (m_sendEvent.IsPending()) {
@@ -70,7 +70,7 @@ void CamSender::StopApplication(void) {
   }
 }
 
-void CamSender::SendCam(void) {
+void CamSender::SendCam() {
   NS_ASSERT(m_running);
   NS_ASSERT(m_socket);
 
@@ -123,7 +123,7 @@ void CamSender::SendCam(void) {
   ScheduleNextCam();
 }
 
-void CamSender::ScheduleNextCam(void) {
+void CamSender::ScheduleNextCam() {
   if (m_running) {
     Time jitter = MicroSeconds(m_jitterRng->GetInteger(0, 100000));
     Time nextTime = m_interval + jitter;
@@ -134,7 +134,7 @@ void CamSender::ScheduleNextCam(void) {
 
 NS_OBJECT_ENSURE_REGISTERED(CamReceiver);
 
-TypeId CamReceiver::GetTypeId(void) {
+TypeId CamReceiver::GetTypeId() {
   static TypeId tid = TypeId("ns3::CamReceiver")
                           .SetParent<Application>()
                           .SetGroupName("Applications")
@@ -142,11 +142,11 @@ TypeId CamReceiver::GetTypeId(void) {
   return tid;
 }
 
-CamReceiver::CamReceiver() : m_socket(0), m_packetsReceived(0) {}
+CamReceiver::CamReceiver() : m_socket(nullptr), m_packetsReceived(0) {}
 
-CamReceiver::~CamReceiver() { m_socket = 0; }
+CamReceiver::~CamReceiver() { m_socket = nullptr; }
 
-void CamReceiver::StartApplication(void) {
+void CamReceiver::StartApplication() {
   if (!m_socket) {
     m_socket = Socket::CreateSocket(GetNode(), TypeId::LookupByName("ns3::PacketSocketFactory"));
 
@@ -159,7 +159,7 @@ void CamReceiver::StartApplication(void) {
   m_socket->SetRecvCallback(MakeCallback(&CamReceiver::HandleRead, this));
 }
 
-void CamReceiver::StopApplication(void) {
+void CamReceiver::StopApplication() {
   if (m_socket) {
     m_socket->SetRecvCallback(MakeNullCallback<void, Ptr<Socket>>());
     m_socket->Close();
@@ -216,4 +216,4 @@ void CamReceiver::HandleRead(Ptr<Socket> socket) {
   }
 }
 
-}  // namespace ns3
+}

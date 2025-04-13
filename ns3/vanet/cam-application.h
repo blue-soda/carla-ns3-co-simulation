@@ -8,22 +8,22 @@
 
 namespace ns3 {
 
-class CamSender : public Application {
+class CamSender final : public Application {
 public:
-    static TypeId GetTypeId(void);
+    static TypeId GetTypeId();
     CamSender();
-    virtual ~CamSender();
+    ~CamSender() override;
 
     void SetVehicleId(uint32_t id);
-    void SetInterval(Time interval);
+    void SetInterval(const Time& interval);
     void SetBroadcastRadius(uint16_t radius);
 
 private:
-    virtual void StartApplication(void);
-    virtual void StopApplication(void);
+    void StartApplication() override;
+    void StopApplication() override;
 
-    void SendCam(void);
-    void ScheduleNextCam(void);
+    void SendCam();
+    void ScheduleNextCam();
 
     Ptr<Socket> m_socket;
     uint32_t m_vehicleId;
@@ -35,15 +35,15 @@ private:
     Ptr<UniformRandomVariable> m_jitterRng;
 };
 
-class CamReceiver : public Application {
+class CamReceiver final : public Application {
 public:
-    static TypeId GetTypeId(void);
+    static TypeId GetTypeId();
     CamReceiver();
-    virtual ~CamReceiver();
+    ~CamReceiver() override;
 
 private:
-    virtual void StartApplication(void);
-    virtual void StopApplication(void);
+    void StartApplication() override;
+    void StopApplication() override;
 
     void HandleRead(Ptr<Socket> socket);
 

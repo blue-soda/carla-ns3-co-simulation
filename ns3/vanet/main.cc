@@ -1,49 +1,171 @@
 #include "ns3/core-module.h"
-#include "ns3/internet-module.h"
 #include "ns3/mobility-module.h"
 #include "ns3/network-module.h"
 #include "ns3/packet-socket-helper.h"
-#include "ns3/wifi-helper.h"
-#include "ns3/wifi-mac-helper.h"
 #include "ns3/yans-wifi-helper.h"
 
 #include "cam-application.h"
-#include "geo-networking.h"
+
+#include <arpa/inet.h>
+#include <netinet/in.h>
+#include <sys/socket.h>
+#include <unistd.h>
+
+#include <atomic>
+#include <iostream>
+#include <mutex>
+#include <nlohmann/json.hpp>
+#include <thread>
 
 using namespace ns3;
+using json = nlohmann::json;
 
-NS_LOG_COMPONENT_DEFINE("CamBroadcastExample");
+NS_LOG_COMPONENT_DEFINE("CarlaFixedIdVanet");
+
+NodeContainer vehicles;
+std::map<int, Vector> latestPositions;
+std::map<int, Vector> latestVelocities;
+std::mutex dataMutex;
+std::atomic firstDataReceived(false);
+bool running = true;
+
+void ProcessJsonData(const std::string &data) {
+  try {
+    json vehicleArray = json::parse(data);
+    std::lock_guard lock(dataMutex);
+
+    for (const auto &vehicle : vehicleArray) {
+      int id = vehicle["id"];
+      if (static_cast<uint32_t>(id) >= vehicles.GetN())
+      {
+          continue;
+      }
+
+      const Vector pos(vehicle["position"]["x"],
+                       vehicle["position"]["y"],
+                       vehicle["position"]["z"]);
+      const Vector vel(vehicle["velocity"]["x"], vehicle["velocity"]["y"], vehicle["velocity"]["z"]);
+
+      latestPositions[id] = pos;
+      latestVelocities[id] = vel;
+
+      const double heading = vehicle.value("heading", 0.0);
+      const double speed   = vehicle.value("speed", 0.0);
+      
+      std::cout << "[INFO] Vehicle " << id
+                << " @ (" << pos.x << "," << pos.y << ")"
+                << " heading: " << heading << "°"
+                << " speed: " << speed << " m/s\n";
+    }
+
+    if (!firstDataReceived) {
+      firstDataReceived = true;
+      std::cout << "[INFO] First data received from Carla!\n";
+    }
+
+  } catch (json::exception &e) {
+    std::cerr << "JSON parse error: " << e.what() << "\n";
+  }
+}
+
+
+void SocketServerThread() {
+    sockaddr_in address{};
+  int addrlen = sizeof(address);
+  char buffer[8192];
+
+  int server_fd = socket(AF_INET, SOCK_STREAM, 0);
+  if (server_fd < 0) {
+    perror("socket failed");
+    return;
+  }
+
+  int opt = 1;
+  setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+
+  address.sin_family = AF_INET;
+  address.sin_addr.s_addr = INADDR_ANY;
+  address.sin_port = htons(5556);
+
+  if (bind(server_fd, reinterpret_cast<sockaddr*>(&address), sizeof(address)) < 0) {
+    perror("bind failed");
+    close(server_fd);
+    return;
+  }
+
+  if (listen(server_fd, 1) < 0) {
+    perror("listen failed");
+    close(server_fd);
+    return;
+  }
+
+  std::cout << "[INFO] Waiting for Carla on port 5556...\n";
+  const int client_fd = accept(server_fd, reinterpret_cast<sockaddr*>(&address), reinterpret_cast<socklen_t*>(&addrlen));
+  if (client_fd < 0) {
+    perror("accept failed");
+    close(server_fd);
+    return;
+  }
+
+  std::cout << "[INFO] Carla connected.\n";
+
+  while (running) {
+    memset(buffer, 0, sizeof(buffer));
+    const ssize_t bytes = recv(client_fd, buffer, sizeof(buffer) - 1, 0);
+
+    if (bytes <= 0) {
+      std::cout << "[INFO] Carla disconnected or error.\n";
+      break;
+    }
+
+    buffer[bytes] = '\0';
+
+    ProcessJsonData(std::string(buffer));
+  }
+
+  close(client_fd);
+  close(server_fd);
+}
+
+void UpdateVehiclePositions() {
+  std::lock_guard lock(dataMutex);
+
+  for (const auto &[id, pos] : latestPositions) {
+    if (static_cast<uint32_t>(id) >= vehicles.GetN()) continue;
+
+    Ptr<ConstantVelocityMobilityModel> mobility =
+        vehicles.Get(id)->GetObject<ConstantVelocityMobilityModel>();
+    if (mobility) {
+      mobility->SetPosition(pos);
+      mobility->SetVelocity(latestVelocities[id]);
+    }
+  }
+
+  if (running) {
+    Simulator::Schedule(Seconds(0.1), &UpdateVehiclePositions);
+  }
+}
 
 int main(int argc, char *argv[]) {
-  LogComponentEnable("CamBroadcastExample", LOG_LEVEL_INFO);
-  LogComponentEnable("CamApplication", LOG_LEVEL_INFO);
-
-  Simulator::SetImplementation(CreateObject<RealtimeSimulatorImpl>());
-
-  uint32_t nVehicles = 2;
+  uint32_t nVehicles = 3;
   double simTime = 10.0;
   double camInterval = 0.1;
-  bool enablePcap = true;
-  std::string pcapFilePrefix = "cam-broadcast";
-  uint16_t geoNetRadius = 1000;
 
   CommandLine cmd;
-  cmd.AddValue("nVehicles", "Number of vehicles", nVehicles);
-  cmd.AddValue("simTime", "Simulation time in seconds", simTime);
-  cmd.AddValue("camInterval", "CAM broadcast interval in seconds", camInterval);
-  cmd.AddValue("enablePcap", "Enable PCAP file generation", enablePcap);
-  cmd.AddValue("pcapFilePrefix", "Prefix for PCAP files", pcapFilePrefix);
-  cmd.AddValue("geoNetRadius", "GeoNetworking broadcast radius in meters", geoNetRadius);
+  cmd.AddValue("simTime", "Simulation time (s)", simTime);
+  cmd.AddValue("camInterval", "CAM interval (s)", camInterval);
   cmd.Parse(argc, argv);
 
-  NodeContainer vehicles;
+  Simulator::SetImplementation(CreateObject<RealtimeSimulatorImpl>());
+  std::thread serverThread(SocketServerThread);
+
   vehicles.Create(nVehicles);
 
   PacketSocketHelper packetSocketHelper;
   packetSocketHelper.Install(vehicles);
 
   WifiHelper wifi;
-  wifi.SetStandard(WIFI_STANDARD_80211a);  // 5 GHz
+  wifi.SetStandard(WIFI_STANDARD_80211a);
   wifi.SetRemoteStationManager("ns3::ConstantRateWifiManager", "DataMode",
                                StringValue("OfdmRate6Mbps"), "ControlMode",
                                StringValue("OfdmRate6Mbps"));
@@ -53,20 +175,15 @@ int main(int argc, char *argv[]) {
   wifiPhy.SetChannel(wifiChannel.Create());
 
   WifiMacHelper wifiMac;
-  wifiMac.SetType("ns3::AdhocWifiMac");  // ad-hoc mode
+  wifiMac.SetType("ns3::AdhocWifiMac");
 
   NetDeviceContainer devices = wifi.Install(wifiPhy, wifiMac, vehicles);
-
-  if (enablePcap) {
-    wifiPhy.EnablePcap(pcapFilePrefix, devices);
-  }
+  wifiPhy.EnablePcap("carla-vanet", devices);
 
   MobilityHelper mobility;
-  Ptr<ListPositionAllocator> positionAlloc =
-      CreateObject<ListPositionAllocator>();
-
+  Ptr<ListPositionAllocator> positionAlloc = CreateObject<ListPositionAllocator>();
   for (uint32_t i = 0; i < nVehicles; i++) {
-    positionAlloc->Add(Vector(i * 50.0, 0.0, 0.0));
+    positionAlloc->Add(Vector(0, 0, 0));
   }
 
   mobility.SetPositionAllocator(positionAlloc);
@@ -74,16 +191,16 @@ int main(int argc, char *argv[]) {
   mobility.Install(vehicles);
 
   for (uint32_t i = 0; i < nVehicles; i++) {
-    Ptr<ConstantVelocityMobilityModel> mobility =
+    Ptr<ConstantVelocityMobilityModel> mob =
         vehicles.Get(i)->GetObject<ConstantVelocityMobilityModel>();
-    mobility->SetVelocity(Vector((i % 5 + 1) * 5.0, 0, 0));
+    mob->SetVelocity(Vector(0, 0, 0));
   }
 
   for (uint32_t i = 0; i < nVehicles; i++) {
     Ptr<CamSender> sender = CreateObject<CamSender>();
     sender->SetVehicleId(i + 1);
     sender->SetInterval(Seconds(camInterval));
-    sender->SetBroadcastRadius(geoNetRadius);
+    sender->SetBroadcastRadius(1000);
     vehicles.Get(i)->AddApplication(sender);
     sender->SetStartTime(Seconds(1.0 + 0.01 * i));
     sender->SetStopTime(Seconds(simTime));
@@ -94,11 +211,20 @@ int main(int argc, char *argv[]) {
     receiver->SetStopTime(Seconds(simTime));
   }
 
-  NS_LOG_INFO("Running simulation...");
+  std::cout << "[INFO] Waiting for first Carla data...\n";
+  while (!firstDataReceived) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+  }
+
+  std::cout << "[INFO] Starting simulation!\n";
+  Simulator::Schedule(Seconds(0.1), &UpdateVehiclePositions);
   Simulator::Stop(Seconds(simTime));
   Simulator::Run();
-  Simulator::Destroy();
-  NS_LOG_INFO("Simulation completed.");
 
+  running = false;
+  serverThread.join();
+  Simulator::Destroy();
+
+  std::cout << "[INFO] Simulation finished.\n";
   return 0;
 }

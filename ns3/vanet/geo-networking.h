@@ -2,15 +2,13 @@
 #define GEO_NETWORKING_H
 
 #include "ns3/header.h"
-#include "ns3/nstime.h"
-#include "ns3/vector.h"
 
 #define PROT_NUM_GEONETWORKING 0x8947  // EtherType for GeoNetworking
 #define PROT_NUM_CAM 0x02
 
 namespace ns3 {
 
-class GeoNetHeader : public Header {
+class GeoNetHeader final : public Header {
  public:
   enum GeoNetMessageType {
     BEACON = 1,
@@ -21,36 +19,36 @@ class GeoNetHeader : public Header {
   };
 
   GeoNetHeader();
-  virtual ~GeoNetHeader();
+  ~GeoNetHeader() override;
 
-  static TypeId GetTypeId(void);
-  virtual TypeId GetInstanceTypeId(void) const;
-  virtual uint32_t GetSerializedSize(void) const;
-  virtual void Serialize(Buffer::Iterator start) const;
-  virtual uint32_t Deserialize(Buffer::Iterator start);
-  virtual void Print(std::ostream &os) const;
+  static TypeId GetTypeId();
+  TypeId GetInstanceTypeId() const override;
+  uint32_t GetSerializedSize() const override;
+  void Serialize(Buffer::Iterator start) const override;
+  uint32_t Deserialize(Buffer::Iterator start) override;
+  void Print(std::ostream &os) const override;
 
   void SetVersion(uint8_t version);
-  uint8_t GetVersion(void) const;
+  uint8_t GetVersion() const;
 
   void SetNextHeader(uint8_t nextHeader);
-  uint8_t GetNextHeader(void) const;
+  uint8_t GetNextHeader() const;
 
   void SetMessageType(GeoNetMessageType type);
-  GeoNetMessageType GetMessageType(void) const;
+  GeoNetMessageType GetMessageType() const;
 
   void SetSourcePosition(double x, double y);
-  double GetSourcePositionX(void) const;
-  double GetSourcePositionY(void) const;
+  double GetSourcePositionX() const;
+  double GetSourcePositionY() const;
 
   void SetSourceId(uint32_t id);
-  uint32_t GetSourceId(void) const;
+  uint32_t GetSourceId() const;
 
   void SetRadius(uint16_t radius);
-  uint16_t GetRadius(void) const;
+  uint16_t GetRadius() const;
 
   void SetLifetime(uint16_t seconds);
-  uint16_t GetLifetime(void) const;
+  uint16_t GetLifetime() const;
 
  private:
   uint8_t m_version;
@@ -63,35 +61,35 @@ class GeoNetHeader : public Header {
   uint16_t m_lifetime;
 };
 
-class CamHeader : public Header {
+class CamHeader final : public Header {
  public:
   CamHeader();
-  virtual ~CamHeader();
+  ~CamHeader() override;
 
-  static TypeId GetTypeId(void);
-  virtual TypeId GetInstanceTypeId(void) const;
-  virtual uint32_t GetSerializedSize(void) const;
-  virtual void Serialize(Buffer::Iterator start) const;
-  virtual uint32_t Deserialize(Buffer::Iterator start);
-  virtual void Print(std::ostream &os) const;
+  static TypeId GetTypeId();
+  TypeId GetInstanceTypeId() const override;
+  uint32_t GetSerializedSize() const override;
+  void Serialize(Buffer::Iterator start) const override;
+  uint32_t Deserialize(Buffer::Iterator start) override;
+  void Print(std::ostream &os) const override;
 
   void SetVehicleId(uint32_t id);
-  uint32_t GetVehicleId(void) const;
+  uint32_t GetVehicleId() const;
 
   void SetPositionX(double x);
-  double GetPositionX(void) const;
+  double GetPositionX() const;
 
   void SetPositionY(double y);
-  double GetPositionY(void) const;
+  double GetPositionY() const;
 
   void SetSpeed(double speed);
-  double GetSpeed(void) const;
+  double GetSpeed() const;
 
   void SetHeading(double heading);
-  double GetHeading(void) const;
+  double GetHeading() const;
 
   void SetTimestamp(uint64_t timestamp);
-  uint64_t GetTimestamp(void) const;
+  uint64_t GetTimestamp() const;
 
  private:
   uint32_t m_vehicleId;

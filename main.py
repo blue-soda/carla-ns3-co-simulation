@@ -7,33 +7,44 @@ from src.models.v2x_messages import CAMGenerator, DENMGenerator
 from src.utils.carla_ns3_bridge import CarlaNs3Bridge
 from config.settings import CARLA_HOST, CARLA_PORT, CARLA_TIMEOUT
 
+def round_data(value, digits=2):
+    if isinstance(value, dict):
+        return {k: round_data(v, digits) for k, v in value.items()}
+    elif isinstance(value, list):
+        return [round_data(v, digits) for v in value]
+    elif isinstance(value, float):
+        return round(value, digits)
+    return value
+
 def collect_vehicle_data(world):
     """Collect position and velocity data for all vehicles"""
     vehicles = world.get_actors().filter('*vehicle*')
     vehicle_data = []
     
-    for vehicle in vehicles:
+    for index, vehicle in enumerate(vehicles):
         transform = vehicle.get_transform()
         velocity = vehicle.get_velocity()
-        
+        heading = transform.rotation.yaw
+        speed = (velocity.x**2 + velocity.y**2 + velocity.z**2)**0.5
+
         vehicle_data.append({
-            "id": vehicle.id,
+            "id": index,
+            "carla_id": vehicle.id,
             "position": {
                 "x": transform.location.x,
                 "y": transform.location.y,
                 "z": transform.location.z
             },
-            "rotation": {
-                "pitch": transform.rotation.pitch,
-                "yaw": transform.rotation.yaw,
-                "roll": transform.rotation.roll
-            },
             "velocity": {
                 "x": velocity.x,
                 "y": velocity.y,
                 "z": velocity.z
-            }
+            },
+            "heading": heading,
+            "speed": speed
         })
+
+    vehicle_data = round_data(vehicle_data)
     
     print(f"Collected vehicle data: {json.dumps(vehicle_data, indent=2)}")
 
