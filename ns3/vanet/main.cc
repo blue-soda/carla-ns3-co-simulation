@@ -18,6 +18,8 @@ int main(int argc, char *argv[]) {
   LogComponentEnable("CamBroadcastExample", LOG_LEVEL_INFO);
   LogComponentEnable("CamApplication", LOG_LEVEL_INFO);
 
+  Simulator::SetImplementation(CreateObject<RealtimeSimulatorImpl>());
+
   uint32_t nVehicles = 2;
   double simTime = 10.0;
   double camInterval = 0.1;
