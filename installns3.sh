@@ -9,6 +9,12 @@ rm ns-allinone-3.44.tar.bz2
 
 echo "[INFO] ns-3 downloaded and unpacked"
 
+# Copy bridge code to ns-3
+
+cp -r ./ns3/* ./ns-allinone-3.44/ns-3.44/scratch/
+
+echo "[INFO] copied bridge code to ns-3"
+
 # Build ns-3
 
 cd ns-allinone-3.44
@@ -16,9 +22,3 @@ cd ns-allinone-3.44
 
 echo "[INFO] ns-3 installation completed"
 
-# Copy our bridge code to ns-3
-
-cd ..
-cp -r ./ns3/* ./ns-allinone-3.44/ns-3.44/scratch/
-
-echo "[INFO] Setup completed successfully!"
