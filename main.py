@@ -1,7 +1,4 @@
 import time
-import threading
-import json
-
 from src.utils.carla_connector import connect_to_carla, spawn_vehicle, spawn_vehicles, set_autopilot, destroy_actors, follow_vehicle
 from src.utils.carla_ns3_bridge import CarlaNs3Bridge
 from src.utils.logger import logger
@@ -44,10 +41,6 @@ def collect_vehicle_data(vehicles):
 
     return vehicle_data
 
-def process_ns3_message(message):
-    """Process messages received from ns-3"""
-    logger.info(f"Received from ns-3: {json.dumps(message, indent=2)}")
-
 def main():
     logger.info("Connecting to Carla simulator")
     client, world = connect_to_carla(CARLA_HOST, CARLA_PORT, CARLA_TIMEOUT)
@@ -58,9 +51,6 @@ def main():
     
     logger.info("Successfully connected to Carla simulator!")
 
-    bridge = CarlaNs3Bridge()
-    bridge.start_receiver(callback=process_ns3_message)
-    
     all_vehicles = []
 
     ego_vehicle = spawn_vehicle(world, 'coupe_2020')
@@ -74,9 +64,12 @@ def main():
     all_vehicles.extend(spawn_vehicles(world, 2, ['cooper_s']))
 
     set_autopilot(world, True)
+
+    bridge = CarlaNs3Bridge()
+    bridge.start()
     
     try:
-        while True:
+        while bridge.is_simulation_running():
             vehicle_data = collect_vehicle_data(all_vehicles)
             bridge.send_vehicle_states(vehicle_data)
             

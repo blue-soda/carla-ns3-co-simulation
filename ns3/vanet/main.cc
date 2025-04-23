@@ -146,6 +146,32 @@ void UpdateVehiclePositions() {
   }
 }
 
+void SendSimulationEndSignal() {
+  int client_fd = socket(AF_INET, SOCK_STREAM, 0);
+  if (client_fd < 0) {
+    perror("socket failed");
+    return;
+  }
+
+  sockaddr_in address{};
+  address.sin_family = AF_INET;
+  address.sin_addr.s_addr = inet_addr("127.0.0.1");
+  address.sin_port = htons(5557);
+
+  if (connect(client_fd, reinterpret_cast<sockaddr*>(&address), sizeof(address)) < 0) {
+    perror("connect failed");
+    close(client_fd);
+    return;
+  }
+
+  const char* end_signal = "{\"type\":\"simulation_end\"}\n";
+  if (send(client_fd, end_signal, strlen(end_signal), 0) < 0) {
+    perror("send failed");
+  }
+
+  close(client_fd);
+}
+
 int main(int argc, char *argv[]) {
   uint32_t nVehicles = 3;
   double simTime = 10.0;
@@ -165,7 +191,7 @@ int main(int argc, char *argv[]) {
   packetSocketHelper.Install(vehicles);
 
   WifiHelper wifi;
-  wifi.SetStandard(WIFI_STANDARD_80211a);
+  wifi.SetStandard(WIFI_STANDARD_80211p);
   wifi.SetRemoteStationManager("ns3::ConstantRateWifiManager", "DataMode",
                                StringValue("OfdmRate6Mbps"), "ControlMode",
                                StringValue("OfdmRate6Mbps"));
@@ -223,6 +249,7 @@ int main(int argc, char *argv[]) {
 
   running = false;
   serverThread.join();
+  SendSimulationEndSignal();
   Simulator::Destroy();
 
   std::cout << "[INFO] Simulation finished.\n";

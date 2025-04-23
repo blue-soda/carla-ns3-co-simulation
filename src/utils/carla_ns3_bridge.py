@@ -2,23 +2,25 @@ import json
 import socket
 import threading
 import time
-from typing import Dict, Any, List, Callable, Optional
+import sys
 from src.utils.logger import logger
-from config.settings import SOCKET_PORT
+from config.settings import NS3_HOST, NS3_SEND_PORT, NS3_RECV_PORT
 
 class CarlaNs3Bridge:
     """Bridge for communication between CARLA and ns-3 using standard sockets"""
     
-    def __init__(self, ns3_host: str = 'localhost', ns3_port: int = SOCKET_PORT):
+    def __init__(self, ns3_host: str = NS3_HOST, ns3_send_port: int = NS3_SEND_PORT, ns3_recv_port: int = NS3_RECV_PORT):
         self.ns3_host = ns3_host
-        self.ns3_port = ns3_port
+        self.ns3_send_port = ns3_send_port
+        self.ns3_recv_port = ns3_recv_port
         self.socket = None
+        self.receiver_socket = None
         self.connected = False
         self.running = True
         self.reconnect_thread = None
         self.receiver_thread = None
         self.received_messages = []
-    
+
     def _connect(self) -> bool:
         """Connect to ns-3 server"""
         if self.socket:
@@ -26,76 +28,75 @@ class CarlaNs3Bridge:
             
         try:
             self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            self.socket.connect((self.ns3_host, self.ns3_port))
+            self.socket.connect((self.ns3_host, self.ns3_send_port))
             self.connected = True
-            logger.info(f"Connected to ns-3 bridge at {self.ns3_host}:{self.ns3_port}")
+            logger.info(f"Connected to ns-3 bridge at {self.ns3_host}:{self.ns3_send_port}")
             return True
         except Exception as e:
             logger.error(f"Error connecting to ns-3 bridge: {e}")
             self.connected = False
             return False
-    
+
     def _reconnect_loop(self):
         """Try to reconnect periodically"""
         while self.running and not self.connected:
             if self._connect():
                 break
             time.sleep(5)
-    
+
     def ensure_connection(self):
         """Ensure there's a connection to ns-3, try to reconnect if not"""
         if not self.connected and not self.reconnect_thread:
             self.reconnect_thread = threading.Thread(target=self._reconnect_loop)
             self.reconnect_thread.daemon = True
             self.reconnect_thread.start()
-    
-    def _receive_loop(self, callback: Callable[[Dict[str, Any]], None] = None):
-        """Loop to receive messages from ns-3"""
-        buffer_size = 4096
-        
-        while self.running and self.connected:
-            try:
-                self.socket.settimeout(0.5)
-                
+
+    def _listen_for_messages(self):
+        """Listen for messages from ns-3"""
+        try:
+            self.receiver_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            self.receiver_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            self.receiver_socket.bind((self.ns3_host, self.ns3_recv_port))
+            self.receiver_socket.listen(1)
+            logger.info(f"Listening for messages on port {self.ns3_recv_port}")
+            
+            while self.running:
                 try:
-                    data = self.socket.recv(buffer_size)
-                    if not data:
-                        logger.info("Connection closed by ns-3")
-                        self.connected = False
-                        self.ensure_connection()
-                        break
-                    
-                    message = data.decode('utf-8')
-                    if message:
+                    client_socket, _ = self.receiver_socket.accept()
+                    data = client_socket.recv(1024)
+                    if data:
                         try:
-                            json_data = json.loads(message)
-                            self.received_messages.append(json_data)
-                            if callback:
-                                callback(json_data)
-                        except json.JSONDecodeError as e:
-                            logger.error(f"Error decoding JSON from ns-3: {e}")
-                except socket.timeout:
-                    pass
-                except socket.error as e:
-                    logger.error(f"Socket error while receiving data: {e}")
-                    self.connected = False
-                    self.ensure_connection()
+                            message = json.loads(data.decode('utf-8'))
+                            if message.get("type") == "simulation_end":
+                                logger.info("Received simulation end signal from ns-3")
+                                self.running = False
+                                break
+                        except json.JSONDecodeError:
+                            pass
+                    client_socket.close()
+                except socket.error:
                     break
-                    
-            except Exception as e:
-                logger.error(f"Error in receive loop: {e}")
-                time.sleep(1)
-    
-    def start_receiver(self, callback: Callable[[Dict[str, Any]], None] = None):
-        """Start a thread to receive messages from ns-3"""
+        except Exception as e:
+            logger.error(f"Error in end signal listener: {e}")
+        finally:
+            if self.receiver_socket:
+                self.receiver_socket.close()
+
+    def _start_receiver(self):
+        """Start threads to receive messages from ns-3"""
+            
         if not self.receiver_thread:
-            self.receiver_thread = threading.Thread(target=self._receive_loop, args=(callback,))
+            self.receiver_thread = threading.Thread(target=self._listen_for_messages)
             self.receiver_thread.daemon = True
             self.receiver_thread.start()
-            logger.info("Started receiver thread for messages from ns-3")
-    
+            logger.info("Started receiver thread")
+
     def send_vehicle_states(self, vehicles):
         """Send vehicle states to ns-3"""
+        if not self.running:
+            logger.info("Simulation ended, not sending more vehicle states")
+            return False
+            
         if not self.connected:
             logger.warning("Not connected, attempting to reconnect...")
             self.ensure_connection()
@@ -112,33 +113,28 @@ class CarlaNs3Bridge:
             logger.error(f"Error sending vehicle states: {e}")
             self.connected = False
             return False
-    
-    def send_v2x_message(self, message: Dict[str, Any]) -> bool:
-        """Send a V2X message to ns-3"""
-        if not self.connected:
-            self.ensure_connection()
-            return False
-        
-        try:
-            data = {
-                "type": "v2x_message",
-                "message": message
-            }
-            msg = json.dumps(data)
-            self.socket.sendall(msg.encode('utf-8'))
-            return True
-        except Exception as e:
-            logger.error(f"Error sending V2X message: {e}")
-            self.connected = False
-            self.ensure_connection()
-            return False
-    
+
     def stop(self):
         """Stop the bridge"""
         self.running = False
         if self.socket:
             self.socket.close()
+        if self.receiver_socket:
+            self.receiver_socket.close()
         if self.reconnect_thread:
             self.reconnect_thread.join(timeout=1.0)
         if self.receiver_thread:
             self.receiver_thread.join(timeout=1.0)
+
+    def _start_sender(self):
+        """Start the sender"""
+        self._connect()
+
+    def start(self):
+        """Start the bridge"""
+        self._start_receiver()
+        self._start_sender()
+
+    def is_simulation_running(self) -> bool:
+        """Check if the simulation is running"""
+        return self.running
