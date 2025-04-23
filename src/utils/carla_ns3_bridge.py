@@ -3,11 +3,13 @@ import socket
 import threading
 import time
 from typing import Dict, Any, List, Callable, Optional
+from src.utils.logger import logger
+from config.settings import SOCKET_PORT
 
 class CarlaNs3Bridge:
     """Bridge for communication between CARLA and ns-3 using standard sockets"""
     
-    def __init__(self, ns3_host: str = 'localhost', ns3_port: int = 5556):
+    def __init__(self, ns3_host: str = 'localhost', ns3_port: int = SOCKET_PORT):
         self.ns3_host = ns3_host
         self.ns3_port = ns3_port
         self.socket = None
@@ -26,10 +28,10 @@ class CarlaNs3Bridge:
             self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             self.socket.connect((self.ns3_host, self.ns3_port))
             self.connected = True
-            print(f"Connected to ns-3 bridge at {self.ns3_host}:{self.ns3_port}")
+            logger.info(f"Connected to ns-3 bridge at {self.ns3_host}:{self.ns3_port}")
             return True
         except Exception as e:
-            print(f"Error connecting to ns-3 bridge: {e}")
+            logger.error(f"Error connecting to ns-3 bridge: {e}")
             self.connected = False
             return False
     
@@ -38,7 +40,7 @@ class CarlaNs3Bridge:
         while self.running and not self.connected:
             if self._connect():
                 break
-            time.sleep(5)  # Wait 5 seconds before next attempt
+            time.sleep(5)
     
     def ensure_connection(self):
         """Ensure there's a connection to ns-3, try to reconnect if not"""
@@ -53,19 +55,16 @@ class CarlaNs3Bridge:
         
         while self.running and self.connected:
             try:
-                # Set socket to non-blocking mode with a timeout
                 self.socket.settimeout(0.5)
                 
-                # Try to receive data
                 try:
                     data = self.socket.recv(buffer_size)
                     if not data:
-                        print("Connection closed by ns-3")
+                        logger.info("Connection closed by ns-3")
                         self.connected = False
                         self.ensure_connection()
                         break
                     
-                    # Process received data
                     message = data.decode('utf-8')
                     if message:
                         try:
@@ -74,18 +73,17 @@ class CarlaNs3Bridge:
                             if callback:
                                 callback(json_data)
                         except json.JSONDecodeError as e:
-                            print(f"Error decoding JSON from ns-3: {e}")
+                            logger.error(f"Error decoding JSON from ns-3: {e}")
                 except socket.timeout:
-                    # This is normal, just continue the loop
                     pass
                 except socket.error as e:
-                    print(f"Socket error while receiving data: {e}")
+                    logger.error(f"Socket error while receiving data: {e}")
                     self.connected = False
                     self.ensure_connection()
                     break
                     
             except Exception as e:
-                print(f"Error in receive loop: {e}")
+                logger.error(f"Error in receive loop: {e}")
                 time.sleep(1)
     
     def start_receiver(self, callback: Callable[[Dict[str, Any]], None] = None):
@@ -94,28 +92,24 @@ class CarlaNs3Bridge:
             self.receiver_thread = threading.Thread(target=self._receive_loop, args=(callback,))
             self.receiver_thread.daemon = True
             self.receiver_thread.start()
-            print("Started receiver thread for messages from ns-3")
+            logger.info("Started receiver thread for messages from ns-3")
     
     def send_vehicle_states(self, vehicles):
         """Send vehicle states to ns-3"""
         if not self.connected:
-            print("Not connected, attempting to reconnect...")
+            logger.warning("Not connected, attempting to reconnect...")
             self.ensure_connection()
             if not self.connected:
-                print("Failed to reconnect")
+                logger.error("Failed to reconnect")
                 return False
         
         try:
-            # Convert message to JSON string
             message = json.dumps(vehicles)
-            print(f"DEBUG: Sending {len(message)} bytes to NS-3")
-            
-            # Send the message with newline to ensure proper buffering
             self.socket.sendall((message + "\n").encode('utf-8'))
-            print(f"DEBUG: Sent {len(message)} bytes to NS-3 successfully")
+            logger.info(f"Sent {len(message)} bytes to NS-3 successfully")
             return True
         except Exception as e:
-            print(f"Error sending vehicle states: {e}")
+            logger.error(f"Error sending vehicle states: {e}")
             self.connected = False
             return False
     
@@ -134,7 +128,7 @@ class CarlaNs3Bridge:
             self.socket.sendall(msg.encode('utf-8'))
             return True
         except Exception as e:
-            print(f"Error sending V2X message: {e}")
+            logger.error(f"Error sending V2X message: {e}")
             self.connected = False
             self.ensure_connection()
             return False

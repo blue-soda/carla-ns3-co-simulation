@@ -1,6 +1,7 @@
 import carla
 import random
 import time
+from src.utils.logger import logger
 
 from typing import Tuple, Optional
 
@@ -29,11 +30,11 @@ def connect_to_carla(host: str, port: int, timeout: float, synchronous: bool = F
             settings.synchronous_mode = True
             settings.fixed_delta_seconds = fixed_delta_seconds
             world.apply_settings(settings)
-            print(f"CARLA running in synchronous mode with {fixed_delta_seconds}s fixed time step")
+            logger.info(f"CARLA running in synchronous mode with {fixed_delta_seconds}s fixed time step")
             
         return client, world
     except Exception as e:
-        print(f"Error connecting to Carla: {e}")
+        logger.error(f"Error connecting to Carla: {e}")
         return None, None
         
 def spawn_vehicle(world: carla.World, vehicle_type: str = None) -> Optional[carla.Vehicle]:
@@ -59,20 +60,25 @@ def spawn_vehicle(world: carla.World, vehicle_type: str = None) -> Optional[carl
         vehicle = world.spawn_actor(vehicle_blueprint, spawn_point)
         return vehicle
     except Exception as e:
-        print(f"Error spawning vehicle: {e}")
+        logger.error(f"Error spawning vehicle: {e}")
         return None
 
 
-def spawn_vehicles(world: carla.World, num_vehicles: int, vehicle_types: list[str] = None) -> None:
+def spawn_vehicles(world: carla.World, num_vehicles: int, vehicle_types: list[str] = None) -> list[carla.Vehicle]:
     """
     Spawn a number of vehicles in the world
     
     Args:
         world: Carla world
         num_vehicles: Number of vehicles to spawn
+        vehicle_types: List of vehicle types to spawn
+        
+    Returns:
+        List of spawned vehicles
     """
     try:
         blueprint_library = world.get_blueprint_library()
+        spawned_vehicles = []
 
         if vehicle_types:
             vehicle_blueprints = [blueprint_library.filter(vehicle_type)[0] for vehicle_type in vehicle_types]
@@ -83,13 +89,18 @@ def spawn_vehicles(world: carla.World, num_vehicles: int, vehicle_types: list[st
         
         for i in range(num_vehicles):
             try: 
-                world.try_spawn_actor(random.choice(vehicle_blueprints), random.choice(spawn_points))
+                vehicle = world.try_spawn_actor(random.choice(vehicle_blueprints), random.choice(spawn_points))
+                if vehicle:
+                    spawned_vehicles.append(vehicle)
+                    vehicle.set_autopilot(True)  # Set autopilot immediately after spawning
             except Exception as e:
-                print(f"Error spawning vehicle: {e}")
+                logger.error(f"Error spawning vehicle: {e}")
                 continue
+                
+        return spawned_vehicles
     except Exception as e:
-        print(f"Error spawning vehicles: {e}")
-        return None
+        logger.error(f"Error spawning vehicles: {e}")
+        return []
     
 def set_autopilot(world: carla.World, enable: bool) -> None:
     """
@@ -102,21 +113,39 @@ def set_autopilot(world: carla.World, enable: bool) -> None:
         for vehicle in world.get_actors().filter('*vehicle*'):
             vehicle.set_autopilot(enable)
     except Exception as e:
-        print(f"Error setting autopilot: {e}")
+        logger.error(f"Error setting autopilot: {e}")
         return None
 
-def destroy_actors(world: carla.World) -> None:
+def destroy_actors(world: carla.World, vehicles_to_destroy: list[carla.Vehicle] = None) -> None:
     """
-    Destroy all actors in the world
+    Destroy specified vehicles and reset spectator camera
     
     Args:
         world: Carla world
+        vehicles_to_destroy: List of vehicles to destroy. If None, destroys all vehicles.
     """
     try:
-        for actor in world.get_actors():
-            actor.destroy()
+        if vehicles_to_destroy is None:
+            return
+        
+        for vehicle in vehicles_to_destroy:
+            try:
+                if vehicle.is_alive:
+                    vehicle.set_autopilot(False)
+            except Exception as e:
+                logger.warning(f"Could not disable autopilot for vehicle {vehicle.id}: {e}")
+        
+        for vehicle in vehicles_to_destroy:
+            try:
+                if vehicle.is_alive:
+                    vehicle.destroy()
+                    logger.info(f"Destroyed vehicle {vehicle.id}")
+            except Exception as e:
+                logger.warning(f"Could not destroy vehicle {vehicle.id}: {e}")
+                
+        logger.info("All specified vehicles destroyed successfully")
     except Exception as e:
-        print(f"Error destroying actors: {e}")
+        logger.error(f"Error during vehicle destruction: {e}")
         return None
 
 def follow_vehicle(world: carla.World, vehicle: carla.Vehicle, stop_event=None) -> None:
@@ -144,8 +173,8 @@ def follow_vehicle(world: carla.World, vehicle: carla.Vehicle, stop_event=None) 
                 spectator.set_transform(camera.get_transform())
                 time.sleep(0.01)
             except KeyboardInterrupt:
-                print("\nCamera follow interrupted by user")
+                logger.info("Camera follow interrupted by user")
                 break
 
     except Exception as e:
-        print(f"Error setting spectator transform: {e}")
+        logger.error(f"Error setting spectator transform: {e}")
