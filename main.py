@@ -1,45 +1,9 @@
 import time
-from src.utils.carla_connector import connect_to_carla, spawn_vehicle, spawn_vehicles, set_autopilot, destroy_actors, follow_vehicle
-from src.utils.carla_ns3_bridge import CarlaNs3Bridge
-from src.utils.logger import logger
+from src.carla.carla_connector import connect_to_carla, spawn_vehicle, spawn_vehicles, set_autopilot, destroy_actors, follow_vehicle
+from src.bridge.carla_ns3_bridge import CarlaNs3Bridge
+from src.common.logger import logger
+from src.carla.vehicle_data import collect_vehicle_data
 from config.settings import CARLA_HOST, CARLA_PORT, CARLA_TIMEOUT
-
-def collect_vehicle_data(vehicles):
-    """Collect position and velocity data for all vehicles"""
-    
-    vehicle_data = []
-    
-    for index, vehicle in enumerate(vehicles):
-        transform = vehicle.get_transform()
-        velocity = vehicle.get_velocity()
-
-        position = {
-            "x": round(transform.location.x, 2),
-            "y": round(transform.location.y, 2),
-            "z": round(transform.location.z, 2)
-        }
-
-        velocity_data = {
-            "x": round(velocity.x, 2),
-            "y": round(velocity.y, 2),
-            "z": round(velocity.z, 2)
-        }
-
-        heading = round(transform.rotation.yaw, 2)
-        speed = round((velocity.x**2 + velocity.y**2 + velocity.z**2)**0.5, 2)
-
-        vehicle_data.append({
-            "id": index,
-            "carla_id": vehicle.id,
-            "position": position,
-            "velocity": velocity_data,
-            "heading": heading,
-            "speed": speed
-        })
-
-    # print(f"Collected and rounded vehicle data: {json.dumps(vehicle_data, indent=2)}")
-
-    return vehicle_data
 
 def main():
     logger.info("Connecting to Carla simulator")

@@ -1,7 +1,7 @@
 import carla
 import random
 import time
-from src.utils.logger import logger
+from src.common.logger import logger
 
 from typing import Tuple, Optional
 

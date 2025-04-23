@@ -3,7 +3,7 @@ import socket
 import threading
 import time
 import sys
-from src.utils.logger import logger
+from src.common.logger import logger
 from config.settings import NS3_HOST, NS3_SEND_PORT, NS3_RECV_PORT
 
 class CarlaNs3Bridge:
