@@ -67,13 +67,11 @@ class VehicleDataVisualizer:
                 trajectories[vid]["x"].append(pos["x"])
                 trajectories[vid]["y"].append(pos["y"])
 
-        all_x = [x for coords in trajectories.values() for x in coords["x"]]
-        all_y = [y for coords in trajectories.values() for y in coords["y"]]
-        x_min, x_max = min(all_x), max(all_x)
-        y_min, y_max = min(all_y), max(all_y)
+        x_min, x_max = -115, 110
+        y_min, y_max = -70, 145
 
         fig, ax = plt.subplots(figsize=(10, 8))
-        ax.imshow(map_img, extent=[x_min, x_max, y_min, y_max], origin='lower', alpha=0.8)
+        ax.imshow(map_img, extent=[x_min, x_max, y_min, y_max], origin='lower', alpha=0.8, aspect='equal')
 
         for vid, coords in trajectories.items():
             ax.plot(coords["x"], coords["y"], label=f'Vehicle {vid}')
@@ -88,7 +86,6 @@ class VehicleDataVisualizer:
         plt.tight_layout()
         plt.savefig(os.path.join(self.output_dir, 'trajectories.pdf'))
         plt.close()
-
 
     def plot_speed_over_time(self):
         fig, ax = plt.subplots()

@@ -101,26 +101,30 @@ def spawn_vehicles(world: carla.World, num_vehicles: int, vehicle_types: list[st
         logger.error(f"Error spawning vehicles: {e}")
         return []
     
-def set_autopilot(world: carla.World, enable: bool) -> None:
+def set_autopilot(vehicles: list[carla.Vehicle], enable: bool = True) -> None:
     """
     Set autopilot mode for all vehicles in the world
     
     Args:
-        world: Carla world
+        vehicles: List of vehicles to set autopilot for
+        enable: If True, enable autopilot; if False, disable
     """
     try:
-        for vehicle in world.get_actors().filter('*vehicle*'):
-            vehicle.set_autopilot(enable)
+        for vehicle in vehicles:
+            if vehicle.is_alive:
+                vehicle.set_autopilot(enable)
+                logger.info(f"Set autopilot for vehicle {vehicle.id} to {enable}")
+            else:
+                logger.warning(f"Vehicle {vehicle.id} is not alive, skipping")
     except Exception as e:
         logger.error(f"Error setting autopilot: {e}")
         return None
 
-def destroy_actors(world: carla.World, vehicles_to_destroy: list[carla.Vehicle] = None) -> None:
+def destroy_actors(vehicles_to_destroy: list[carla.Vehicle] = None) -> None:
     """
     Destroy specified vehicles and reset spectator camera
     
     Args:
-        world: Carla world
         vehicles_to_destroy: List of vehicles to destroy. If None, destroys all vehicles.
     """
     try:

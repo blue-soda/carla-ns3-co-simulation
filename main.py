@@ -29,7 +29,7 @@ def main():
     
     all_vehicles.extend(spawn_vehicles(world, 2, ['cooper_s']))
 
-    set_autopilot(world, True)
+    set_autopilot(all_vehicles, True)
 
     bridge = CarlaNs3Bridge()
     bridge.start()
@@ -46,7 +46,7 @@ def main():
     finally:
         try:
             bridge.stop()
-            destroy_actors(world, all_vehicles)
+            destroy_actors(all_vehicles)
             
             logger.info("Generating visualization plots...")
             visualizer = VehicleDataVisualizer(vehicle_data_logger.file_path)
