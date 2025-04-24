@@ -3,6 +3,8 @@ from src.carla.carla_connector import connect_to_carla, spawn_vehicle, spawn_veh
 from src.bridge.carla_ns3_bridge import CarlaNs3Bridge
 from src.common.logger import logger
 from src.carla.vehicle_data import collect_vehicle_data
+from src.common.vehicle_data_logger import vehicle_data_logger
+from src.common.visualization import VehicleDataVisualizer
 from config.settings import CARLA_HOST, CARLA_PORT, CARLA_TIMEOUT
 
 def main():
@@ -45,6 +47,13 @@ def main():
         try:
             bridge.stop()
             destroy_actors(world, all_vehicles)
+            
+            # Generate plots after simulation ends
+            logger.info("Generating visualization plots...")
+            visualizer = VehicleDataVisualizer(vehicle_data_logger.file_path)
+            visualizer.generate_all_plots()
+            logger.info(f"Plots have been saved to {visualizer.output_dir}")
+            
         except Exception as e:
             logger.error(f"Error during cleanup: {e}")
     

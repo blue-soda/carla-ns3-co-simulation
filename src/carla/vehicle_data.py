@@ -1,5 +1,6 @@
 from typing import List
 import carla
+from src.common.vehicle_data_logger import vehicle_data_logger
 
 def collect_vehicle_data(vehicles: List[carla.Vehicle]) -> List[dict]:
     """Collect position and velocity data for all vehicles
@@ -39,5 +40,8 @@ def collect_vehicle_data(vehicles: List[carla.Vehicle]) -> List[dict]:
             "heading": heading,
             "speed": speed
         })
+
+    # Log the frame data
+    vehicle_data_logger.log_frame(vehicle_data)
 
     return vehicle_data 
