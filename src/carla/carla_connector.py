@@ -92,7 +92,6 @@ def spawn_vehicles(world: carla.World, num_vehicles: int, vehicle_types: list[st
                 vehicle = world.try_spawn_actor(random.choice(vehicle_blueprints), random.choice(spawn_points))
                 if vehicle:
                     spawned_vehicles.append(vehicle)
-                    vehicle.set_autopilot(True)  # Set autopilot immediately after spawning
             except Exception as e:
                 logger.error(f"Error spawning vehicle: {e}")
                 continue

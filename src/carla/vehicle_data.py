@@ -41,7 +41,6 @@ def collect_vehicle_data(vehicles: List[carla.Vehicle]) -> List[dict]:
             "speed": speed
         })
 
-    # Log the frame data
     vehicle_data_logger.log_frame(vehicle_data)
 
     return vehicle_data 

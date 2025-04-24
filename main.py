@@ -48,7 +48,6 @@ def main():
             bridge.stop()
             destroy_actors(world, all_vehicles)
             
-            # Generate plots after simulation ends
             logger.info("Generating visualization plots...")
             visualizer = VehicleDataVisualizer(vehicle_data_logger.file_path)
             visualizer.generate_all_plots()

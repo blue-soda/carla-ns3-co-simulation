@@ -68,7 +68,6 @@ void ProcessJsonData(const std::string &data) {
   }
 }
 
-
 void SocketServerThread() {
     sockaddr_in address{};
   int addrlen = sizeof(address);

@@ -26,9 +26,7 @@ class VehicleDataLogger:
         }
         self.data["frames"].append(frame_data)
         
-        # Write to file after each frame
         with open(self.file_path, 'w') as f:
             json.dump(self.data, f, indent=2)
 
-# Create a global logger instance
 vehicle_data_logger = VehicleDataLogger() 
