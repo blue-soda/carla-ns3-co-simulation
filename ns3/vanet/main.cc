@@ -203,7 +203,7 @@ int main(int argc, char *argv[]) {
   wifiMac.SetType("ns3::AdhocWifiMac");
 
   NetDeviceContainer devices = wifi.Install(wifiPhy, wifiMac, vehicles);
-  wifiPhy.EnablePcap("carla-vanet", devices);
+  wifiPhy.EnablePcap("../../temp/carla-vanet", devices);
 
   MobilityHelper mobility;
   Ptr<ListPositionAllocator> positionAlloc = CreateObject<ListPositionAllocator>();
