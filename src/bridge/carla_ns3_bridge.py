@@ -30,10 +30,9 @@ class CarlaNs3Bridge:
             self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             self.socket.connect((self.ns3_host, self.ns3_send_port))
             self.connected = True
-            logger.info(f"Connected to ns-3 bridge at {self.ns3_host}:{self.ns3_send_port}")
             return True
         except Exception as e:
-            logger.error(f"Error connecting to ns-3 bridge: {e}")
+            logger.error(f"Error connecting to NS-3 bridge: {e}")
             self.connected = False
             return False
 
@@ -58,7 +57,6 @@ class CarlaNs3Bridge:
             self.receiver_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             self.receiver_socket.bind((self.ns3_host, self.ns3_recv_port))
             self.receiver_socket.listen(1)
-            logger.info(f"Listening for messages on port {self.ns3_recv_port}")
             
             while self.running:
                 try:
@@ -68,7 +66,7 @@ class CarlaNs3Bridge:
                         try:
                             message = json.loads(data.decode('utf-8'))
                             if message.get("type") == "simulation_end":
-                                logger.info("Received simulation end signal from ns-3")
+                                logger.info("Received simulation end signal from NS-3")
                                 self.running = False
                                 break
                         except json.JSONDecodeError:
@@ -89,7 +87,6 @@ class CarlaNs3Bridge:
             self.receiver_thread = threading.Thread(target=self._listen_for_messages)
             self.receiver_thread.daemon = True
             self.receiver_thread.start()
-            logger.info("Started receiver thread")
 
     def send_vehicle_states(self, vehicles):
         """Send vehicle states to ns-3"""
@@ -134,6 +131,7 @@ class CarlaNs3Bridge:
         """Start the bridge"""
         self._start_receiver()
         self._start_sender()
+        logger.info("Bridge started")
 
     def is_simulation_running(self) -> bool:
         """Check if the simulation is running"""

@@ -1,6 +1,10 @@
 import carla
 import random
 import time
+from pathlib import Path
+from typing import Tuple
+import shutil
+
 from src.common.logger import logger
 
 from typing import Tuple, Optional
@@ -62,7 +66,6 @@ def spawn_vehicle(world: carla.World, vehicle_type: str = None) -> Optional[carl
     except Exception as e:
         logger.error(f"Error spawning vehicle: {e}")
         return None
-
 
 def spawn_vehicles(world: carla.World, num_vehicles: int, vehicle_types: list[str] = None) -> list[carla.Vehicle]:
     """
@@ -181,3 +184,61 @@ def follow_vehicle(world: carla.World, vehicle: carla.Vehicle, stop_event=None) 
 
     except Exception as e:
         logger.error(f"Error setting spectator transform: {e}")
+
+def add_camera_to_vehicle(world: carla.World, vehicle: carla.Vehicle) -> Optional[carla.Sensor]:
+    """Attach an RGB camera to *vehicle*.
+
+    Args:
+        world (carla.World): Carla world object.
+        vehicle (carla.Vehicle): Vehicle to attach the camera to.
+
+    Returns:
+        carla.Sensor: The camera sensor actor.
+    """
+
+    try:
+        project_root = Path(__file__).resolve().parents[2]
+        temp_dir = project_root / "temp"
+        camera_dir = temp_dir / "camera"
+
+        if camera_dir.exists():
+            shutil.rmtree(camera_dir) 
+
+        camera_dir.mkdir(parents=True, exist_ok=True)
+
+        camera_bp = world.get_blueprint_library().find("sensor.camera.rgb")
+        camera_transform = carla.Transform(carla.Location(x=1.5, z=2.4))
+
+        camera = world.spawn_actor(camera_bp, camera_transform, attach_to=vehicle)
+        logger.info(f"Camera attached to vehicle {vehicle.id}")
+
+        def _save_camera(image: carla.Image) -> None:
+            image.save_to_disk(str(camera_dir / f"camera_{image.frame}.png"))
+
+        camera.listen(_save_camera)
+
+        return camera
+
+    except Exception as exc:
+        logger.error(f"Error adding camera to vehicle: {exc}")
+        return None
+
+def destroy_sensors(sensors: list[carla.Sensor]) -> None:
+    """
+    Destroy all sensors in the list
+    
+    Args:
+        sensors: List of sensors to destroy
+    """
+    try:
+        for sensor in sensors:
+            if sensor.is_alive:
+                sensor.destroy()
+                logger.info(f"Destroyed sensor {sensor.id}")
+            else:
+                logger.warning(f"Sensor {sensor.id} is not alive, skipping")
+                
+        logger.info("All sensors destroyed successfully")
+    except Exception as e:
+        logger.error(f"Error during sensor destruction: {e}")
+        return None

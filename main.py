@@ -1,5 +1,5 @@
 import time
-from src.carla.carla_connector import connect_to_carla, spawn_vehicle, spawn_vehicles, set_autopilot, destroy_actors, follow_vehicle
+from src.carla.carla_connector import connect_to_carla, spawn_vehicle, spawn_vehicles, set_autopilot, destroy_actors, add_camera_to_vehicle, destroy_sensors
 from src.bridge.carla_ns3_bridge import CarlaNs3Bridge
 from src.common.logger import logger
 from src.carla.vehicle_data import collect_vehicle_data
@@ -18,6 +18,7 @@ def main():
     logger.info("Successfully connected to Carla simulator!")
 
     all_vehicles = []
+    all_sensors = []
 
     ego_vehicle = spawn_vehicle(world, 'coupe_2020')
     if not ego_vehicle:
@@ -26,6 +27,7 @@ def main():
         return
 
     all_vehicles.append(ego_vehicle)
+    all_sensors.append(add_camera_to_vehicle(world, ego_vehicle))
     
     all_vehicles.extend(spawn_vehicles(world, 2, ['cooper_s']))
 
@@ -47,11 +49,12 @@ def main():
         try:
             bridge.stop()
             destroy_actors(all_vehicles)
-            
+            destroy_sensors(all_sensors)
+
             logger.info("Generating visualization plots...")
             visualizer = VehicleDataVisualizer(vehicle_data_logger.file_path)
             visualizer.generate_all_plots()
-            logger.info(f"Plots have been saved to {visualizer.output_dir}")
+            logger.info(f"Plots have been saved")
             
         except Exception as e:
             logger.error(f"Error during cleanup: {e}")
