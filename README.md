@@ -2,7 +2,7 @@
 
 Before starting the installation, please ensure your system meets the following requirements.
 
-- **Operating System:** Ubuntu 20.04 LTS.
+- **Operating System:** Ubuntu 22.04 LTS
 - **GPU:** Minimum: 6 GB VRAM. Recommended: 8+ GB VRAM.
 - **Disk Space:** Minimum 25 GB free.
 - **Python:** 3.11 (with pip3).
