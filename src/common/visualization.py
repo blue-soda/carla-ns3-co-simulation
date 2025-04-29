@@ -74,7 +74,7 @@ class VehicleDataVisualizer:
         ax.imshow(map_img, extent=[x_min, x_max, y_min, y_max], origin='lower', alpha=0.8, aspect='equal')
 
         for vid, coords in trajectories.items():
-            ax.plot(coords["x"], coords["y"], label=f'Vehicle {vid}')
+            ax.plot(coords["x"], coords["y"], label=f'Vehicle {vid}', linestyle='--')
     
         ax.legend(loc='lower left')
         ax.set_xlabel("X Position")
