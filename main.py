@@ -5,7 +5,7 @@ from src.common.logger import logger
 from src.carla.vehicle_data import collect_vehicle_data
 from src.common.vehicle_data_logger import vehicle_data_logger
 from src.common.visualization import VehicleDataVisualizer
-from config.settings import CARLA_HOST, CARLA_PORT, CARLA_TIMEOUT
+from config.settings import CARLA_HOST, CARLA_PORT, CARLA_TIMEOUT, MAP_NAME
 
 def main():
     logger.info("Connecting to Carla simulator")
@@ -16,6 +16,13 @@ def main():
         return
     
     logger.info("Successfully connected to Carla simulator!")
+    
+    world = client.load_world(MAP_NAME)
+    if not world:
+        logger.error(f"Failed to load map {MAP_NAME}.")
+        return
+
+    logger.info(f"Map {MAP_NAME} loaded successfully!")
 
     all_vehicles = []
     all_sensors = []

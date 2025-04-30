@@ -4,6 +4,7 @@ import matplotlib.image as mpimg
 import os
 from datetime import datetime
 from src.common.logger import logger
+from config.settings import MAP_IMAGE_NAME, MAP_X_MIN, MAP_X_MAX, MAP_Y_MIN, MAP_Y_MAX
 
 class VehicleDataVisualizer:
     def __init__(self, data_file: str):
@@ -40,7 +41,7 @@ class VehicleDataVisualizer:
 
         current_dir = os.path.dirname(os.path.abspath(__file__))
         maps_dir = os.path.join(current_dir, '..', '..', 'maps')
-        map_path = os.path.join(maps_dir, 'town10_map.png')
+        map_path = os.path.join(maps_dir, MAP_IMAGE_NAME)
         
         try:
             map_img = mpimg.imread(map_path)
@@ -67,11 +68,8 @@ class VehicleDataVisualizer:
                 trajectories[vid]["x"].append(pos["x"])
                 trajectories[vid]["y"].append(pos["y"])
 
-        x_min, x_max = -115, 110
-        y_min, y_max = -70, 145
-
         fig, ax = plt.subplots(figsize=(10, 8))
-        ax.imshow(map_img, extent=[x_min, x_max, y_min, y_max], origin='lower', alpha=0.8, aspect='equal')
+        ax.imshow(map_img, extent=[MAP_X_MIN, MAP_X_MAX, MAP_Y_MIN, MAP_Y_MAX], origin='lower', alpha=0.8, aspect='equal')
 
         for vid, coords in trajectories.items():
             ax.plot(coords["x"], coords["y"], label=f'Vehicle {vid}', linestyle='--')
