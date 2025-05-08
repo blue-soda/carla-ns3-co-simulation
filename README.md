@@ -174,4 +174,5 @@ To run the CARLA-NS3 co-simulation, you need to follow these steps in order:
 - The default map is set to 'Town10HD_Opt' but can be changed in `config/settings.py`
 - Vehicle data is logged to `temp/vehicle_data.json`
 - Visualization plots are saved in PDF format in the `temp/plots` directory
+- Camera data is saved in `temp/camera` directory
 - For debugging, check the log files in the `temp` directory
