@@ -103,3 +103,75 @@ To run the co-simulation scripts, you need to set up an isolated Python environm
 ## Installation Complete
 
 After completing all steps, the CARLA-NS3-co-simulation system is ready for use. You have installed CARLA, NS3 with the necessary modules, and configured the Python environment with all dependencies.
+
+# Run the co-simulation
+
+To run the CARLA-NS3 co-simulation, you need to follow these steps in order:
+
+1.  **Launch CARLA Simulator:**
+
+    - Open a terminal and navigate to your CARLA installation directory:
+    ```bash
+    cd ~/<path-to-carla-installation>
+
+    ./CarlaUE4.sh
+    ```
+
+2.  **Start NS3 VANET Simulation:**
+
+    - Open a new terminal and navigate to the ns-3 directory in the main project directory:
+    ```bash
+    cd ns-allinone-3.44/ns-3.44
+    ```
+    
+    - Run the VANET simulation with desired parameters:
+    ```bash
+     ./ns3 run scratch/vanet/main.cc -- --simTime=300.0
+    ```
+    
+    Parameters:
+    - `simTime`: Simulation duration in seconds (default: 10.0)
+
+3.  **Run the CARLA-NS3 Bridge:**
+
+    - Open a new terminal and navigate to the project directory. Then activate the Python virtual environment:
+    ```bash
+    source carla/bin/activate
+    ```
+    
+    - Run the main simulation script:
+    ```bash
+    python main.py
+    ```
+
+4.  **Monitor the Simulation:**
+
+    - The simulation progress can be monitored through:
+        - CARLA visualization window
+        - Terminal outputs showing vehicle states and network messages
+        - Log files in the `temp` directory
+    
+    - After simulation completion, visualization plots will be automatically generated in the `temp` directory:
+        - Vehicle trajectories
+        - Speed over time
+        - Heading over time
+
+5.  **Stop the Simulation:**
+
+    - The simulation can be stopped by:
+        - Letting it run for the specified simulation time
+        - Pressing Ctrl+C in the Python script terminal, ns3 terminal and carla terminal
+    
+    - The system will automatically:
+        - Stop the NS3 simulation
+        - Clean up CARLA actors
+        - Generate final visualization plots
+        - Save all logs including PCAP files
+
+**Important Notes:**
+
+- Ensure all three components (CARLA, NS3, and the bridge) are running simultaneously
+- The default map is set to 'Town10HD_Opt' but can be changed in `config/settings.py`
+- Vehicle data is logged to `temp/vehicle_data.json`
+- Visualization plots are saved in PDF format in the `temp/plots` directory
+- For debugging, check the log files in the `temp` directory
