@@ -176,3 +176,75 @@ To run the CARLA-NS3 co-simulation, you need to follow these steps in order:
 - Visualization plots are saved in PDF format in the `temp/plots` directory
 - Camera data is saved in `temp/camera` directory
 - For debugging, check the log files in the `temp` directory
+
+# Project Files and Directories
+
+This section provides an overview of the key files and directories within the CARLA-NS3-Co-Simulation project.
+
+# Root Directory Files
+
+## installdependences.sh
+This is a shell script responsible for installing all necessary system-level dependencies required to build and run NS3. This script is typically run once during the initial setup of the project on a new system.
+
+## installns3.sh
+This shell script automates the process of downloading, building, and configuring NS3. It also integrates the specific modules or patches needed for the co-simulation with CARLA.
+
+## main.py
+This is the primary Python script that launches and manages the co-simulation bridge. It orchestrates the interaction between the CARLA simulator and the NS3 network simulator, handling synchronization, data exchange, and overall simulation flow.
+
+## README.md
+This file contains essential information about the project. It includes system requirements, detailed installation instructions, steps to run the co-simulation, the project structure, and other relevant notes.
+
+## requirements.txt
+This file lists all the Python packages and their specific versions that the project depends on. It is used with `pip install -r requirements.txt` to set up the Python environment correctly, ensuring reproducibility and avoiding dependency conflicts.
+
+# `config` Directory
+The `config` directory holds configuration files that allow users to customize various aspects of the simulation without modifying the core source code.
+
+- **`settings.py`**: This Python file contains key-value settings for the simulation. Examples of what might be configured here include the CARLA map to be used (e.g., 'Town10HD_Opt'), default simulation duration, parameters for vehicle behavior.
+
+# `helpers` Directory
+This directory contains utility scripts that provide supporting functions for the main application.
+
+- **`decoder.py`**: This Python script provides an example of parsing a hexadecimal dump of a network packet from simulation to extract and display CAM message data such as vehicle ID, position, speed, heading, and timestamp.
+
+# `maps` Directory
+The `maps` directory stores image files of CARLA maps. These images are used to plot the vehicle trajectories.
+
+- **`town07_map.png`**: An image file showing the layout of the 'Town07' map from the CARLA simulator.
+- **`town10_map.png`**: An image file showing the layout of the 'Town10HD_Opt' map from the CARLA simulator.
+
+# `ns-allinone-3.44` Directory
+This directory contains the standard NS-3 (Network Simulator 3) version 3.44. It is automatically downloaded and installed by the `installns3.sh` script directly from the official NS-3 website. This directory includes the complete NS3 framework, libraries, and ancillary tools required to run network simulations.
+
+# `ns3` Directory
+This directory houses the NS3-specific components of the co-simulation, including network scenarios and custom communication protocols for VANETs (Vehicular Ad-hoc Networks).
+
+## `vanet` Subdirectory
+This subdirectory contains all the C++ source and header files for the NS3 VANET simulation.
+- **`cam-application.cc`**: The C++ source file implementing the Cooperative Awareness Message (CAM) application for NS3. This application simulates the generation, transmission, and reception of CAMs by vehicles in the network.
+- **`cam-application.h`**: The C++ header file for `cam-application.cc`. It defines the class structure, member variables, and function prototypes for the CAM application.
+- **`geo-networking.cc`**: The C++ source file for the GeoNetworking protocol implementation in NS3. GeoNetworking is a network protocol designed for VANETs that uses geographical position information for message routing and dissemination.
+- **`geo-networking.h`**: The C++ header file for `geo-networking.cc`. It defines the interfaces, data structures, and constants for the GeoNetworking protocol implementation.
+- **`main.cc`**: The main C++ program for the NS3 VANET simulation. This script sets up the network topology (nodes, channels), installs network stacks and applications (like CAM and GeoNetworking) on the nodes, configures mobility models for vehicles, connects the nodes to the CARLA simulator, and starts the NS3 simulation.
+
+# `src` Directory
+The `src` directory contains the Python source code for the CARLA-NS3 bridge co-simulation component.
+
+## `bridge` Subdirectory
+This subdirectory holds the core logic for the bridge that connects CARLA and NS3.
+- **`carla_ns3_bridge.py`**: A Python script that implements the central bridging mechanism. It is responsible for establishing communication channels, synchronizing the two simulators, and relaying data (e.g., vehicle positions from CARLA to NS3, network messages from NS3 back to CARLA).
+
+## `carla` Subdirectory
+This subdirectory contains modules specifically for interacting with the CARLA simulator.
+- **`carla_connector.py`**: This Python script manages the connection to the CARLA server. It provides functionalities to spawn and control vehicles and sensors in the CARLA environment, retrieve simulation data (like vehicle states, sensor readings), and manage the simulation world.
+- **`vehicle_data.py`**: This Python script defines the data structure for vehicle data. It is used to collect vehicle data from CARLA and store returned data in a JSON format.
+
+## `common` Subdirectory
+This subdirectory contains common utility modules that are used by various parts of the `src` codebase.
+- **`logger.py`**: This Python utility module sets up and provides a centralized logging mechanism. It configures a logger to output messages to both the console and a `simulation.log` file stored in the `temp` directory, offering `info`, `warning`, and `error` level logging methods.
+- **`vehicle_data_logger.py`**: This Python script is dedicated to recording vehicle data. It captures frames of vehicle information (ID, position, speed, heading) and saves them incrementally to a `vehicle_data.json` file within the `temp` directory. The log includes the simulation start time and timestamps for each data frame.
+- **`visualization.py`**: This Python script uses the `matplotlib` library to generate and save various visual plots from the `vehicle_data.json` file. It creates plots for vehicle trajectories overlaid on a map, vehicle speeds over time, and vehicle headings over time. These visualizations are saved as PDF files in the `temp/plots` directory.
+
+# `temp` Directory
+The `temp` directory is designated for storing temporary files generated during or after a simulation run. This includes log files from various components, raw or processed data (like `vehicle_data.json`), visualization plots, and camera sensor data.
