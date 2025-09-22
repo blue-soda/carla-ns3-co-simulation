@@ -88,8 +88,8 @@ class CarlaNs3Bridge:
             self.receiver_thread.daemon = True
             self.receiver_thread.start()
 
-    def send_vehicle_states(self, vehicles):
-        """Send vehicle states to ns-3"""
+    def send_something_to_ns3(self, msg_type: str, data):
+        """Send something to ns-3"""
         if not self.running:
             logger.info("Simulation ended, not sending more vehicle states")
             return False
@@ -102,7 +102,8 @@ class CarlaNs3Bridge:
                 return False
         
         try:
-            message = json.dumps(vehicles)
+            message_obj = {"type": msg_type, msg_type: data}
+            message = json.dumps(message_obj)
             self.socket.sendall((message + "\n").encode('utf-8'))
             logger.info(f"Sent {len(message)} bytes to NS-3 successfully")
             return True
@@ -136,3 +137,13 @@ class CarlaNs3Bridge:
     def is_simulation_running(self) -> bool:
         """Check if the simulation is running"""
         return self.running
+
+
+    def send_transfer_requests(self, requests):
+        """
+        requests: [{"source":s, "target":t, "size":n}, {...}, ...]
+        """
+        self.send_something_to_ns3(msg_type = "transfer_requests", data = requests)
+
+    def send_vehicles_position(self, vehicles):
+        self.send_something_to_ns3(msg_type = "vehicles_position", data = vehicles)

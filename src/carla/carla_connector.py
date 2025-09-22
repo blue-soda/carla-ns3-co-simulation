@@ -7,7 +7,7 @@ import shutil
 
 from src.common.logger import logger
 
-from typing import Tuple, Optional
+from typing import Tuple, Optional, List
 
 def connect_to_carla(host: str, port: int, timeout: float, synchronous: bool = False, 
                     fixed_delta_seconds: float = 0.05) -> Tuple[Optional[carla.Client], Optional[carla.World]]:
@@ -67,7 +67,7 @@ def spawn_vehicle(world: carla.World, vehicle_type: str = None) -> Optional[carl
         logger.error(f"Error spawning vehicle: {e}")
         return None
 
-def spawn_vehicles(world: carla.World, num_vehicles: int, vehicle_types: list[str] = None) -> list[carla.Vehicle]:
+def spawn_vehicles(world: carla.World, num_vehicles: int, vehicle_types: Optional[List[str]]) -> List[carla.Vehicle]:
     """
     Spawn a number of vehicles in the world
     
@@ -104,7 +104,7 @@ def spawn_vehicles(world: carla.World, num_vehicles: int, vehicle_types: list[st
         logger.error(f"Error spawning vehicles: {e}")
         return []
     
-def set_autopilot(vehicles: list[carla.Vehicle], enable: bool = True) -> None:
+def set_autopilot(vehicles: List[carla.Vehicle], enable: bool = True) -> None:
     """
     Set autopilot mode for all vehicles in the world
     
@@ -123,7 +123,7 @@ def set_autopilot(vehicles: list[carla.Vehicle], enable: bool = True) -> None:
         logger.error(f"Error setting autopilot: {e}")
         return None
 
-def destroy_actors(vehicles_to_destroy: list[carla.Vehicle] = None) -> None:
+def destroy_actors(vehicles_to_destroy: List[carla.Vehicle] = None) -> None:
     """
     Destroy specified vehicles and reset spectator camera
     
@@ -223,7 +223,7 @@ def add_camera_to_vehicle(world: carla.World, vehicle: carla.Vehicle) -> Optiona
         logger.error(f"Error adding camera to vehicle: {exc}")
         return None
 
-def destroy_sensors(sensors: list[carla.Sensor]) -> None:
+def destroy_sensors(sensors: List[carla.Sensor]) -> None:
     """
     Destroy all sensors in the list
     

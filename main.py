@@ -27,7 +27,11 @@ def main():
     all_vehicles = []
     all_sensors = []
 
-    ego_vehicle = spawn_vehicle(world, 'coupe_2020')
+    ego_vehicle_type = 'vehicle.lincoln.mkz2017' #coupe_2020
+    all_vehicle_type = 'vehicle.lincoln.mkz2017' #cooper_s
+    default_vehicle_type = None
+
+    ego_vehicle = spawn_vehicle(world, ego_vehicle_type)
     if not ego_vehicle:
         logger.error("Failed to spawn ego vehicle")
         bridge.stop()
@@ -36,7 +40,7 @@ def main():
     all_vehicles.append(ego_vehicle)
     all_sensors.append(add_camera_to_vehicle(world, ego_vehicle))
     
-    all_vehicles.extend(spawn_vehicles(world, 2, ['cooper_s']))
+    all_vehicles.extend(spawn_vehicles(world, 2, [all_vehicle_type]))
 
     set_autopilot(all_vehicles, True)
 
@@ -46,8 +50,8 @@ def main():
     try:
         while bridge.is_simulation_running():
             vehicle_data = collect_vehicle_data(all_vehicles)
-            bridge.send_vehicle_states(vehicle_data)
-            
+            bridge.send_vehicles_position(vehicle_data)
+            bridge.send_transfer_requests([{"source":1, "target":2, "size":100}, {"source":0, "target":2, "size":200}])
             time.sleep(1)
             
     except KeyboardInterrupt:

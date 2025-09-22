@@ -29,47 +29,97 @@ std::mutex dataMutex;
 std::atomic firstDataReceived(false);
 bool running = true;
 
+void ProcessData_VehiclePosition(const json& vehicleArray) {
+  for (const auto &vehicle : vehicleArray) {
+    int id = vehicle["id"];
+    if (static_cast<uint32_t>(id) >= vehicles.GetN())
+    {
+        continue;
+    }
+
+    const Vector pos(vehicle["position"]["x"],
+                      vehicle["position"]["y"],
+                      vehicle["position"]["z"]);
+    const Vector vel(vehicle["velocity"]["x"], vehicle["velocity"]["y"], vehicle["velocity"]["z"]);
+
+    latestPositions[id] = pos;
+    latestVelocities[id] = vel;
+
+    const double heading = vehicle.value("heading", 0.0);
+    const double speed   = vehicle.value("speed", 0.0);
+    
+    std::cout << "[INFO] Vehicle " << id
+              << " @ (" << pos.x << "," << pos.y << ")"
+              << " heading: " << heading << "°"
+              << " speed: " << speed << " m/s\n";
+  }
+
+  if (!firstDataReceived) {
+    firstDataReceived = true;
+    std::cout << "[INFO] First data received from Carla!\n";
+  }
+}
+
+void ProcessData_TransferRequests(const json &requests){
+  for (const auto &req : requests) {
+    if (!req.contains("source") || !req.contains("target") || !req.contains("size")) {
+      std::cerr << "[WARN] transfer request missing fields, skipping\n";
+      continue;
+    }
+    int source = req["source"].get<int>();
+    int target = req["target"].get<int>();
+    int size = req["size"].get<int>();
+
+    if (source < 0 || target < 0 || static_cast<uint32_t>(source) >= vehicles.GetN() ||
+        static_cast<uint32_t>(target) >= vehicles.GetN()) {
+      std::cerr << "[WARN] transfer request with invalid node ids: "
+                << source << "->" << target << ", skipping\n";
+      continue;
+    }
+
+    std::cout << "[INFO] Transfer request: " << source << " -> " << target
+              << ", size=" << size << " bytes\n";
+  }
+}
+
 void ProcessJsonData(const std::string &data) {
   try {
-    json vehicleArray = json::parse(data);
-    std::lock_guard lock(dataMutex);
+    json msg = json::parse(data);
+    std::lock_guard<std::mutex> lock(dataMutex);
 
-    for (const auto &vehicle : vehicleArray) {
-      int id = vehicle["id"];
-      if (static_cast<uint32_t>(id) >= vehicles.GetN())
-      {
-          continue;
+    if (msg.contains("type")) {
+      std::string type = msg["type"].get<std::string>();
+
+      if (type == "transfer_requests") {
+        if (!msg.contains("transfer_requests") || !msg["transfer_requests"].is_array()) {
+          std::cerr << "[ERR] transfer_requests message missing 'transfer_requests' array\n";
+          return;
+        }
+        ProcessData_TransferRequests(msg["transfer_requests"]);
+      } 
+      else if (type == "vehicles_position"){
+        if (!msg.contains("vehicles_position") || !msg["vehicles_position"].is_array()) {
+          std::cerr << "[ERR] vehicles_position message missing 'vehicles_position' array\n";
+          return;
+        }
+        ProcessData_VehiclePosition(msg["vehicles_position"]);
+      } 
+      else{
+        std::cerr << "[ERR] Wrong type\n";
       }
-
-      const Vector pos(vehicle["position"]["x"],
-                       vehicle["position"]["y"],
-                       vehicle["position"]["z"]);
-      const Vector vel(vehicle["velocity"]["x"], vehicle["velocity"]["y"], vehicle["velocity"]["z"]);
-
-      latestPositions[id] = pos;
-      latestVelocities[id] = vel;
-
-      const double heading = vehicle.value("heading", 0.0);
-      const double speed   = vehicle.value("speed", 0.0);
-      
-      std::cout << "[INFO] Vehicle " << id
-                << " @ (" << pos.x << "," << pos.y << ")"
-                << " heading: " << heading << "°"
-                << " speed: " << speed << " m/s\n";
+    } 
+    else {
+      std::cerr << "[ERR] Message does not contain 'type'\n";
     }
-
-    if (!firstDataReceived) {
-      firstDataReceived = true;
-      std::cout << "[INFO] First data received from Carla!\n";
-    }
-
-  } catch (json::exception &e) {
+  } 
+  catch (json::exception &e) {
     std::cerr << "JSON parse error: " << e.what() << "\n";
   }
 }
 
+
 void SocketServerThread() {
-    sockaddr_in address{};
+  sockaddr_in address{};
   int addrlen = sizeof(address);
   char buffer[8192];
 
@@ -172,6 +222,9 @@ void SendSimulationEndSignal() {
 }
 
 int main(int argc, char *argv[]) {
+
+  LogComponentEnable("CamApplication", LOG_LEVEL_INFO);
+
   uint32_t nVehicles = 3;
   double simTime = 10.0;
   double camInterval = 0.1;

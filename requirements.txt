@@ -1,2 +1,2 @@
-carla==0.9.15
+carla
 matplotlib>=3.8.0

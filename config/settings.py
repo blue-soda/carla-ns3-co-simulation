@@ -4,12 +4,12 @@ CARLA_PORT = 2000
 CARLA_TIMEOUT = 10.0
 
 # MAP settings
-MAP_NAME = 'Town10HD_Opt'
+MAP_NAME = 'Town06'
 MAP_X_MIN = -115
 MAP_X_MAX =  110
 MAP_Y_MIN = -70
 MAP_Y_MAX =  145
-MAP_IMAGE_NAME = 'town10_map.png'
+MAP_IMAGE_NAME = 'town06_map.png'
 
 # Example settings for another map
 # MAP_NAME = 'Town07'
