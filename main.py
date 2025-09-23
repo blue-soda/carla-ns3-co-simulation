@@ -40,7 +40,7 @@ def main():
     all_vehicles.append(ego_vehicle)
     all_sensors.append(add_camera_to_vehicle(world, ego_vehicle))
     
-    all_vehicles.extend(spawn_vehicles(world, 7, [all_vehicle_type]))
+    all_vehicles.extend(spawn_vehicles(world, 9, [all_vehicle_type]))
 
     set_autopilot(all_vehicles, True)
 

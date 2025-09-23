@@ -22,9 +22,12 @@ using namespace ns3;
 NS_LOG_COMPONENT_DEFINE("CarlaFixedIdVanet");
 
 NodeContainer vehicles;
-uint32_t nVehicles = 3;
+uint32_t nVehicles = 0;
 double simTime = 10.0;
 double camInterval = 0.1;
+
+std::vector<Ptr<CamSender>> senders;
+std::vector<Ptr<CamReceiver>> receivers;
 
 std::map<int, int> indexToCarlaId;
 std::map<int, int> carlaIdToIndex;
@@ -44,6 +47,8 @@ void ProcessData_VehiclePosition(const json& vehicleArray) {
       int index = vehicle["id"];
       indexToCarlaId[index] = id;
       carlaIdToIndex[id] = index;
+      senders[index]->SetVehicleId(id);
+      receivers[index]->SetVehicleId(id);
     }
     // if (static_cast<uint32_t>(id) >= vehicles.GetN()) continue;
     if(!carlaIdToIndex.count(id)) {
@@ -83,12 +88,6 @@ void ProcessData_TransferRequests(const json &requests){
     int size = req["size"].get<int>();
     latestRequests[source] = {size, target};
 
-    // if (source < 0 || target < 0 || static_cast<uint32_t>(source) >= vehicles.GetN() ||
-    //     static_cast<uint32_t>(target) >= vehicles.GetN()) {
-    //   std::cerr << "[WARN] transfer request with invalid node ids: "
-    //             << source << "->" << target << ", skipping\n";
-    //   continue;
-    // }
     if(!carlaIdToIndex.count(source) || !carlaIdToIndex.count(target)) {
       std::cerr << "[WARN] (" << source << ", " << target << ") skipped during ProcessData_TransferRequests\n";
       continue;
@@ -96,6 +95,17 @@ void ProcessData_TransferRequests(const json &requests){
 
     std::cout << "[INFO] Transfer request: " << source << " -> " << target
               << ", size = " << size << " bytes\n";
+    
+    if(indexBindToCarlaId){
+      int source_index = carlaIdToIndex[source];
+      if(source_index >= (int)senders.size()){
+        std::cerr << "[ERR] index out range during ProcessData_TransferRequests, index = " 
+          << source_index << "id = " << source << "\n";
+        continue;
+      }
+      if(senders[source_index]->isRunning())
+        senders[source_index]->SendCam();
+    }
   }
 }
 
@@ -152,7 +162,7 @@ void ProcessJsonData(const std::string &data) {
     }
   }
   catch (json::exception &e) {
-    std::cerr << "[ERR] JSON parse error: " << e.what() << "\n";
+    std::cerr << "[ERR] JSON parse error: " << e.what() << "; input: " << data << "\n"; 
   }
 
   if (!firstDataReceived) {
@@ -228,8 +238,11 @@ void UpdateVehiclePositions() {
         std::cerr << "[WARN] " << id << " skipped during UpdateVehiclePositions\n";
         continue;
       }
-      int index = carlaIdToIndex[id];
-      // if (static_cast<uint32_t>(id) >= vehicles.GetN()) continue;
+      uint32_t index = (uint32_t)carlaIdToIndex[id];
+      if (index >= vehicles.GetN()){ 
+        std::cerr << "[ERR] (" << id << "-> "<< index << ") skipped during UpdateVehiclePositions\n";
+        continue;
+      }
       Ptr<ConstantVelocityMobilityModel> mobility =
           vehicles.Get(index)->GetObject<ConstantVelocityMobilityModel>();
       if (mobility) {
@@ -273,7 +286,14 @@ void SendSimulationEndSignal() {
 }
 
 void InitializeVehicles(uint32_t nVehicles = 3){
+  vehicles = NodeContainer();
   vehicles.Create(nVehicles);
+
+  senders.clear();
+  senders.resize(nVehicles);
+
+  receivers.clear();
+  receivers.resize(nVehicles);
 
   PacketSocketHelper packetSocketHelper;
   packetSocketHelper.Install(vehicles);
@@ -316,14 +336,18 @@ void InitializeVehicles(uint32_t nVehicles = 3){
     sender->SetInterval(Seconds(camInterval));
     sender->SetBroadcastRadius(1000);
     vehicles.Get(i)->AddApplication(sender);
-    sender->SetStartTime(Seconds(1.0 + 0.01 * i));
+    sender->SetStartTime(Seconds(0.0));
     sender->SetStopTime(Seconds(simTime));
+    senders[i] = sender;
 
     Ptr<CamReceiver> receiver = CreateObject<CamReceiver>();
+    receiver->SetVehicleId(i + 1);
     vehicles.Get(i)->AddApplication(receiver);
     receiver->SetStartTime(Seconds(0.0));
     receiver->SetStopTime(Seconds(simTime));
+    receivers[i] = receiver;
   }
+  std::cout << "[INFO] vehiclesInitialized\n";
 }
 int main(int argc, char *argv[]) {
 

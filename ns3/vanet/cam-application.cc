@@ -41,6 +41,8 @@ void CamSender::SetInterval(const Time& interval) { m_interval = interval; }
 
 void CamSender::SetBroadcastRadius(const uint16_t radius) { m_radius = radius; }
 
+bool CamSender::isRunning() { return m_running; };
+
 void CamSender::StartApplication() {
   m_running = true;
 
@@ -55,7 +57,7 @@ void CamSender::StartApplication() {
     m_socket->Bind(socketAddr);
   }
 
-  ScheduleNextCam();
+  // ScheduleNextCam();
 }
 
 void CamSender::StopApplication() {
@@ -120,7 +122,7 @@ void CamSender::SendCam() {
                          << " Position: (" << pos.x << "," << pos.y << ")"
                          << " Speed: " << speed << " Heading: " << heading);
 
-  ScheduleNextCam();
+  // ScheduleNextCam();
 }
 
 void CamSender::ScheduleNextCam() {
@@ -142,9 +144,11 @@ TypeId CamReceiver::GetTypeId() {
   return tid;
 }
 
-CamReceiver::CamReceiver() : m_socket(nullptr), m_packetsReceived(0) {}
+CamReceiver::CamReceiver() : m_socket(nullptr), m_vehicleId(0), m_packetsReceived(0) {}
 
 CamReceiver::~CamReceiver() { m_socket = nullptr; }
+
+void CamReceiver::SetVehicleId(const uint32_t id) { m_vehicleId = id; }
 
 void CamReceiver::StartApplication() {
   if (!m_socket) {
@@ -191,8 +195,8 @@ void CamReceiver::HandleRead(Ptr<Socket> socket) {
           CamHeader camHeader;
           packet->RemoveHeader(camHeader);
 
-          NS_LOG_INFO("Node "
-                      << GetNode()->GetId() << " received CAM from Vehicle "
+          NS_LOG_INFO("Node " << GetNode()->GetId() << " (Vehicle " << m_vehicleId << ")" 
+                      << " received CAM from Vehicle "
                       << camHeader.GetVehicleId() << " at "
                       << Simulator::Now().GetSeconds() << "s" << " Position: ("
                       << camHeader.GetPositionX() << ","
@@ -206,8 +210,8 @@ void CamReceiver::HandleRead(Ptr<Socket> socket) {
           m_packetsReceived++;
         }
       } else {
-        NS_LOG_INFO("Node "
-                    << GetNode()->GetId() << " discarded packet from Vehicle "
+        NS_LOG_INFO("Node " << GetNode()->GetId() << " (Vehicle " << m_vehicleId << ")" 
+                    << " discarded packet from Vehicle "
                     << geoHeader.GetSourceId()
                     << " - outside broadcast radius (distance=" << distance
                     << "m, radius=" << geoHeader.GetRadius() << "m)");

@@ -18,11 +18,13 @@ public:
     void SetInterval(const Time& interval);
     void SetBroadcastRadius(uint16_t radius);
 
+    void SendCam();
+    bool isRunning();
+
 private:
     void StartApplication() override;
     void StopApplication() override;
 
-    void SendCam();
     void ScheduleNextCam();
 
     Ptr<Socket> m_socket;
@@ -40,7 +42,8 @@ public:
     static TypeId GetTypeId();
     CamReceiver();
     ~CamReceiver() override;
-
+    void SetVehicleId(uint32_t id);
+    
 private:
     void StartApplication() override;
     void StopApplication() override;
@@ -48,6 +51,7 @@ private:
     void HandleRead(Ptr<Socket> socket);
 
     Ptr<Socket> m_socket;
+    uint32_t m_vehicleId;
     uint32_t m_packetsReceived;
 };
 
