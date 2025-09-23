@@ -5,6 +5,7 @@
 #include "ns3/yans-wifi-helper.h"
 
 #include "cam-application.h"
+#include "carla_vanet.h"
 
 #include <arpa/inet.h>
 #include <netinet/in.h>
@@ -14,29 +15,41 @@
 #include <atomic>
 #include <iostream>
 #include <mutex>
-#include <nlohmann/json.hpp>
 #include <thread>
 
 using namespace ns3;
-using json = nlohmann::json;
 
 NS_LOG_COMPONENT_DEFINE("CarlaFixedIdVanet");
 
 NodeContainer vehicles;
+uint32_t nVehicles = 3;
+double simTime = 10.0;
+double camInterval = 0.1;
+
+std::map<int, int> indexToCarlaId;
+std::map<int, int> carlaIdToIndex;
+std::atomic indexBindToCarlaId(false);
+
 std::map<int, Vector> latestPositions;
 std::map<int, Vector> latestVelocities;
+std::map<int, std::vector<int>> latestRequests;
 std::mutex dataMutex;
 std::atomic firstDataReceived(false);
 bool running = true;
 
 void ProcessData_VehiclePosition(const json& vehicleArray) {
   for (const auto &vehicle : vehicleArray) {
-    int id = vehicle["id"];
-    if (static_cast<uint32_t>(id) >= vehicles.GetN())
-    {
-        continue;
+    int id = vehicle["carla_id"];
+    if(!indexBindToCarlaId){
+      int index = vehicle["id"];
+      indexToCarlaId[index] = id;
+      carlaIdToIndex[id] = index;
     }
-
+    // if (static_cast<uint32_t>(id) >= vehicles.GetN()) continue;
+    if(!carlaIdToIndex.count(id)) {
+      std::cerr << "[WARN] " << id << " skipped during ProcessData_VehiclePosition\n";
+      continue;
+    }
     const Vector pos(vehicle["position"]["x"],
                       vehicle["position"]["y"],
                       vehicle["position"]["z"]);
@@ -53,10 +66,9 @@ void ProcessData_VehiclePosition(const json& vehicleArray) {
               << " heading: " << heading << "°"
               << " speed: " << speed << " m/s\n";
   }
-
-  if (!firstDataReceived) {
-    firstDataReceived = true;
-    std::cout << "[INFO] First data received from Carla!\n";
+  if(!indexBindToCarlaId){
+    indexBindToCarlaId = true;
+    std::cout << "[INFO] indexBindToCarlaId\n";
   }
 }
 
@@ -69,18 +81,34 @@ void ProcessData_TransferRequests(const json &requests){
     int source = req["source"].get<int>();
     int target = req["target"].get<int>();
     int size = req["size"].get<int>();
+    latestRequests[source] = {size, target};
 
-    if (source < 0 || target < 0 || static_cast<uint32_t>(source) >= vehicles.GetN() ||
-        static_cast<uint32_t>(target) >= vehicles.GetN()) {
-      std::cerr << "[WARN] transfer request with invalid node ids: "
-                << source << "->" << target << ", skipping\n";
+    // if (source < 0 || target < 0 || static_cast<uint32_t>(source) >= vehicles.GetN() ||
+    //     static_cast<uint32_t>(target) >= vehicles.GetN()) {
+    //   std::cerr << "[WARN] transfer request with invalid node ids: "
+    //             << source << "->" << target << ", skipping\n";
+    //   continue;
+    // }
+    if(!carlaIdToIndex.count(source) || !carlaIdToIndex.count(target)) {
+      std::cerr << "[WARN] (" << source << ", " << target << ") skipped during ProcessData_TransferRequests\n";
       continue;
     }
 
     std::cout << "[INFO] Transfer request: " << source << " -> " << target
-              << ", size=" << size << " bytes\n";
+              << ", size = " << size << " bytes\n";
   }
 }
+
+void ProcessData_VehiclesNum(const int &num){
+  uint32_t unum = (uint32_t)num;
+  if(nVehicles != unum){
+    nVehicles = unum;
+    InitializeVehicles(unum);
+    indexBindToCarlaId = false;
+  }
+  std::cout << "[INFO] ProcessData_VehiclesNum: " << nVehicles << "\n";
+}
+
 
 void ProcessJsonData(const std::string &data) {
   try {
@@ -97,6 +125,7 @@ void ProcessJsonData(const std::string &data) {
         }
         ProcessData_TransferRequests(msg["transfer_requests"]);
       } 
+
       else if (type == "vehicles_position"){
         if (!msg.contains("vehicles_position") || !msg["vehicles_position"].is_array()) {
           std::cerr << "[ERR] vehicles_position message missing 'vehicles_position' array\n";
@@ -104,16 +133,31 @@ void ProcessJsonData(const std::string &data) {
         }
         ProcessData_VehiclePosition(msg["vehicles_position"]);
       } 
+
+      else if (type == "vehicles_num"){
+        if (!msg.contains("vehicles_num")) {
+          std::cerr << "[ERR] vehicles_num message missing 'vehicles_num'\n";
+          return;
+        }
+        ProcessData_VehiclesNum(msg["vehicles_num"].get<int>());
+      } 
+
       else{
         std::cerr << "[ERR] Wrong type\n";
       }
     } 
+
     else {
       std::cerr << "[ERR] Message does not contain 'type'\n";
     }
-  } 
+  }
   catch (json::exception &e) {
-    std::cerr << "JSON parse error: " << e.what() << "\n";
+    std::cerr << "[ERR] JSON parse error: " << e.what() << "\n";
+  }
+
+  if (!firstDataReceived) {
+    firstDataReceived = true;
+    std::cout << "[INFO] First data received from Carla!\n";
   }
 }
 
@@ -177,22 +221,29 @@ void SocketServerThread() {
 }
 
 void UpdateVehiclePositions() {
-  std::lock_guard lock(dataMutex);
-
-  for (const auto &[id, pos] : latestPositions) {
-    if (static_cast<uint32_t>(id) >= vehicles.GetN()) continue;
-
-    Ptr<ConstantVelocityMobilityModel> mobility =
-        vehicles.Get(id)->GetObject<ConstantVelocityMobilityModel>();
-    if (mobility) {
-      mobility->SetPosition(pos);
-      mobility->SetVelocity(latestVelocities[id]);
+  try{
+    std::lock_guard lock(dataMutex);
+    for (const auto &[id, pos] : latestPositions) {
+      if(!carlaIdToIndex.count(id)) {
+        std::cerr << "[WARN] " << id << " skipped during UpdateVehiclePositions\n";
+        continue;
+      }
+      int index = carlaIdToIndex[id];
+      // if (static_cast<uint32_t>(id) >= vehicles.GetN()) continue;
+      Ptr<ConstantVelocityMobilityModel> mobility =
+          vehicles.Get(index)->GetObject<ConstantVelocityMobilityModel>();
+      if (mobility) {
+        mobility->SetPosition(pos);
+        mobility->SetVelocity(latestVelocities[id]);
+      }
     }
-  }
+    if (running) {
+      Simulator::Schedule(Seconds(0.1), &UpdateVehiclePositions);
+    }
+  } 
+  catch(std::exception &e){ std::cerr << "[ERR] UpdateVehiclePositions error: " << e.what() << "\n"; }
+  catch (...) { std::cerr << "[ERR] UpdateVehiclePositions: unknown exception caught\n"; }
 
-  if (running) {
-    Simulator::Schedule(Seconds(0.1), &UpdateVehiclePositions);
-  }
 }
 
 void SendSimulationEndSignal() {
@@ -221,22 +272,7 @@ void SendSimulationEndSignal() {
   close(client_fd);
 }
 
-int main(int argc, char *argv[]) {
-
-  LogComponentEnable("CamApplication", LOG_LEVEL_INFO);
-
-  uint32_t nVehicles = 3;
-  double simTime = 10.0;
-  double camInterval = 0.1;
-
-  CommandLine cmd;
-  cmd.AddValue("simTime", "Simulation time (s)", simTime);
-  cmd.AddValue("camInterval", "CAM interval (s)", camInterval);
-  cmd.Parse(argc, argv);
-
-  Simulator::SetImplementation(CreateObject<RealtimeSimulatorImpl>());
-  std::thread serverThread(SocketServerThread);
-
+void InitializeVehicles(uint32_t nVehicles = 3){
   vehicles.Create(nVehicles);
 
   PacketSocketHelper packetSocketHelper;
@@ -288,7 +324,19 @@ int main(int argc, char *argv[]) {
     receiver->SetStartTime(Seconds(0.0));
     receiver->SetStopTime(Seconds(simTime));
   }
+}
+int main(int argc, char *argv[]) {
 
+  LogComponentEnable("CamApplication", LOG_LEVEL_INFO);
+
+  CommandLine cmd;
+  cmd.AddValue("simTime", "Simulation time (s)", simTime);
+  cmd.AddValue("camInterval", "CAM interval (s)", camInterval);
+  cmd.Parse(argc, argv);
+
+  Simulator::SetImplementation(CreateObject<RealtimeSimulatorImpl>());
+  std::thread serverThread(SocketServerThread);
+  
   std::cout << "[INFO] Waiting for first Carla data...\n";
   while (!firstDataReceived) {
     std::this_thread::sleep_for(std::chrono::milliseconds(100));

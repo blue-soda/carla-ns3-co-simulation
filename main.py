@@ -40,7 +40,7 @@ def main():
     all_vehicles.append(ego_vehicle)
     all_sensors.append(add_camera_to_vehicle(world, ego_vehicle))
     
-    all_vehicles.extend(spawn_vehicles(world, 2, [all_vehicle_type]))
+    all_vehicles.extend(spawn_vehicles(world, 7, [all_vehicle_type]))
 
     set_autopilot(all_vehicles, True)
 
@@ -48,10 +48,11 @@ def main():
     bridge.start()
     
     try:
+        bridge.send_vehicles_num(10)
         while bridge.is_simulation_running():
             vehicle_data = collect_vehicle_data(all_vehicles)
             bridge.send_vehicles_position(vehicle_data)
-            bridge.send_transfer_requests([{"source":1, "target":2, "size":100}, {"source":0, "target":2, "size":200}])
+            bridge.send_transfer_requests([{"source":ego_vehicle.id, "target":ego_vehicle.id, "size":100}, {"source":0, "target":2, "size":200}])
             time.sleep(1)
             
     except KeyboardInterrupt:

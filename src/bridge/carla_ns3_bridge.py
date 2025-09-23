@@ -5,6 +5,7 @@ import time
 import sys
 from src.common.logger import logger
 from config.settings import NS3_HOST, NS3_SEND_PORT, NS3_RECV_PORT
+from typing import *
 
 class CarlaNs3Bridge:
     """Bridge for communication between CARLA and ns-3 using standard sockets"""
@@ -138,12 +139,24 @@ class CarlaNs3Bridge:
         """Check if the simulation is running"""
         return self.running
 
+    def send_vehicles_num(self, vehicles_num: int):
+        self.send_something_to_ns3(msg_type = "vehicles_num", data = vehicles_num)
 
-    def send_transfer_requests(self, requests):
+    def send_transfer_requests(self, requests: List[Dict[str, int]]):
         """
         requests: [{"source":s, "target":t, "size":n}, {...}, ...]
         """
         self.send_something_to_ns3(msg_type = "transfer_requests", data = requests)
 
-    def send_vehicles_position(self, vehicles):
+    def send_vehicles_position(self, vehicles: List[Dict[str, int]]):
+        """
+        vehicles: [{
+            "id": index,
+            "carla_id": vehicle.id,
+            "position": position,
+            "velocity": velocity_data,
+            "heading": heading,
+            "speed": speed
+        }, ...]
+        """
         self.send_something_to_ns3(msg_type = "vehicles_position", data = vehicles)
