@@ -52,7 +52,7 @@ def main():
         while bridge.is_simulation_running():
             vehicle_data = collect_vehicle_data(all_vehicles)
             bridge.send_vehicles_position(vehicle_data)
-            bridge.send_transfer_requests([{"source":ego_vehicle.id, "target":ego_vehicle.id, "size":100}, {"source":0, "target":2, "size":200}])
+            bridge.send_transfer_requests([{"source":ego_vehicle.id, "target":ego_vehicle.id, "size":1000}, {"source":0, "target":2, "size":200}])
             time.sleep(1)
             
     except KeyboardInterrupt:

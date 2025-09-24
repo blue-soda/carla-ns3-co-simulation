@@ -72,7 +72,8 @@ class CarlaNs3Bridge:
                             elif message.get("type") == "cam_received":
                                 receiver_id = message.get("receiver_id")
                                 sender_id = message.get("sender_id")
-                                logger.info(f"Info from NS-3: Vehicle {receiver_id} received msg from Vehicle {sender_id}")
+                                logger.info(f"Info from NS-3: Vehicle {receiver_id} received msg from Vehicle {sender_id}, " +
+                                            f"msg sent at {message.get('send_timestamp')}, received at {message.get('receive_timestamp')}")
                         except json.JSONDecodeError:
                             pass
                     # client_socket.close()

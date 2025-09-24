@@ -16,5 +16,8 @@ void SendMsgToCarla(const std::string &msg);
 void SocketSenderServerConnect();
 void SocketSenderServerDisconnect();
 
-void InitializeVehicles(uint32_t nVehicles);
+void InitializeVehicles_DSRC(uint32_t nVehicles);
+void InitializeVehicles(uint32_t nVehicles = 3){
+  InitializeVehicles_DSRC(nVehicles);
+}
 #endif

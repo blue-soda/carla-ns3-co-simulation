@@ -14,7 +14,6 @@ namespace ns3 {
 NS_LOG_COMPONENT_DEFINE("CamApplication");
 
 NS_OBJECT_ENSURE_REGISTERED(CamSender);
-
 TypeId CamSender::GetTypeId() {
   static TypeId tid = TypeId("ns3::CamSender")
                           .SetParent<Application>()
@@ -22,7 +21,6 @@ TypeId CamSender::GetTypeId() {
                           .AddConstructor<CamSender>();
   return tid;
 }
-
 CamSender::CamSender()
     : m_socket(nullptr),
       m_vehicleId(0),
@@ -32,18 +30,51 @@ CamSender::CamSender()
       m_packetsSent(0) {
   m_jitterRng = CreateObject<UniformRandomVariable>();
 }
-
 CamSender::~CamSender() { m_socket = nullptr; }
-
 void CamSender::SetVehicleId(const uint32_t id) { m_vehicleId = id; }
-
 void CamSender::SetInterval(const Time& interval) { m_interval = interval; }
-
 void CamSender::SetBroadcastRadius(const uint16_t radius) { m_radius = radius; }
+bool CamSender::IsRunning() { return m_running; };
+void CamSender::SendCam(uint32_t bytes, bool addCamHeader, bool addGeoNetHeader) { std::cout << "[WARN] CamSender::SendCam should be overridden\n"; } 
+void CamSender::StartApplication() { m_running = true; }
+void CamSender::StopApplication() {
+  m_running = false;
+  if (m_sendEvent.IsPending()) {
+    Simulator::Cancel(m_sendEvent);
+  }
+  if (m_socket) {
+    m_socket->Close();
+  }
+}
+void CamSender::ScheduleNextCam() {
+  if (m_running) {
+    Time jitter = MicroSeconds(m_jitterRng->GetInteger(0, 100000));
+    Time nextTime = m_interval + jitter;
+    m_sendEvent = Simulator::Schedule(nextTime, [this] { SendCam(); });
+  }
+}
 
-bool CamSender::isRunning() { return m_running; };
+NS_OBJECT_ENSURE_REGISTERED(CamReceiver);
+TypeId CamReceiver::GetTypeId() {
+  static TypeId tid = TypeId("ns3::CamReceiver")
+                          .SetParent<Application>()
+                          .SetGroupName("Applications")
+                          .AddConstructor<CamReceiver>();
+  return tid;
+}
+CamReceiver::CamReceiver() : m_socket(nullptr), m_vehicleId(0), m_packetsReceived(0) {}
+CamReceiver::~CamReceiver() { m_socket = nullptr; }
+void CamReceiver::SetVehicleId(const uint32_t id) { m_vehicleId = id; }
+void CamReceiver::SetReplyFunction(std::function<void(const std::string&)> replyFunction) {
+  m_replyFunction = replyFunction;
+}
+void CamReceiver::StartApplication() {}
+void CamReceiver::StopApplication() {}
+void CamReceiver::HandleRead(Ptr<Socket> socket) { std::cout << "[WARN] CamReceiver::HandleRead should be overridden\n"; }
 
-void CamSender::StartApplication() {
+// ==================== DSRC derived classes ====================
+NS_OBJECT_ENSURE_REGISTERED(CamSenderDSRC);
+void CamSenderDSRC::StartApplication() {
   m_running = true;
 
   if (!m_socket) {
@@ -56,23 +87,13 @@ void CamSender::StartApplication() {
     socketAddr.SetPhysicalAddress(Mac48Address::GetBroadcast());
     m_socket->Bind(socketAddr);
   }
-
-  // ScheduleNextCam();
 }
 
-void CamSender::StopApplication() {
-  m_running = false;
-
-  if (m_sendEvent.IsPending()) {
-    Simulator::Cancel(m_sendEvent);
-  }
-
-  if (m_socket) {
-    m_socket->Close();
-  }
+void CamSenderDSRC::StopApplication() {
+  CamSender::StopApplication();
 }
 
-void CamSender::SendCam() {
+void CamSenderDSRC::SendCam(uint32_t bytes, bool addCamHeader, bool addGeoNetHeader) {
   NS_ASSERT(m_running);
   NS_ASSERT(m_socket);
 
@@ -86,28 +107,38 @@ void CamSender::SendCam() {
 
   Ptr<Packet> packet = Create<Packet>();
 
-  CamHeader camHeader;
-  camHeader.SetVehicleId(m_vehicleId);
-  camHeader.SetPositionX(pos.x);
-  camHeader.SetPositionY(pos.y);
-  camHeader.SetSpeed(speed);
-  camHeader.SetHeading(heading);
-  camHeader.SetTimestamp(Simulator::Now().GetMilliSeconds());
-  packet->AddHeader(camHeader);
+  if(addCamHeader){
+    CamHeader camHeader;
+    camHeader.SetVehicleId(m_vehicleId);
+    camHeader.SetPositionX(pos.x);
+    camHeader.SetPositionY(pos.y);
+    camHeader.SetSpeed(speed);
+    camHeader.SetHeading(heading);
+    camHeader.SetTimestamp(Simulator::Now().GetMilliSeconds());
+    packet->AddHeader(camHeader);
+  }
 
-  GeoNetHeader geoHeader;
-  geoHeader.SetVersion(1);
-  geoHeader.SetNextHeader(PROT_NUM_CAM);
-  geoHeader.SetMessageType(GeoNetHeader::GEOBROADCAST);
-  geoHeader.SetSourcePosition(pos.x, pos.y);
-  geoHeader.SetSourceId(m_vehicleId);
-  geoHeader.SetRadius(m_radius);
-  geoHeader.SetLifetime(10);
-  packet->AddHeader(geoHeader);
+  if(addGeoNetHeader){
+    GeoNetHeader geoHeader;
+    geoHeader.SetVersion(1);
+    geoHeader.SetNextHeader(PROT_NUM_CAM);
+    geoHeader.SetMessageType(GeoNetHeader::GEOBROADCAST);
+    geoHeader.SetSourcePosition(pos.x, pos.y);
+    geoHeader.SetSourceId(m_vehicleId);
+    geoHeader.SetRadius(m_radius);
+    geoHeader.SetLifetime(10);
+    packet->AddHeader(geoHeader);
 
-  LlcSnapHeader llc;
-  llc.SetType(PROT_NUM_GEONETWORKING);
-  packet->AddHeader(llc);
+    LlcSnapHeader llc;
+    llc.SetType(PROT_NUM_GEONETWORKING);
+    packet->AddHeader(llc);
+  }
+
+  if (bytes > packet->GetSize()) {
+    uint32_t paddingSize = bytes - packet->GetSize();
+    Ptr<Packet> padding = Create<Packet>(paddingSize);
+    packet->AddAtEnd(padding);
+  }
 
   PacketSocketAddress destination;
   destination.SetProtocol(0);
@@ -121,40 +152,24 @@ void CamSender::SendCam() {
                          << Simulator::Now().GetSeconds() << "s"
                          << " Position: (" << pos.x << "," << pos.y << ")"
                          << " Speed: " << speed << " Heading: " << heading);
-
-  // ScheduleNextCam();
 }
 
-void CamSender::ScheduleNextCam() {
-  if (m_running) {
-    Time jitter = MicroSeconds(m_jitterRng->GetInteger(0, 100000));
-    Time nextTime = m_interval + jitter;
 
-    m_sendEvent = Simulator::Schedule(nextTime, &CamSender::SendCam, this);
-  }
-}
-
-NS_OBJECT_ENSURE_REGISTERED(CamReceiver);
-
-TypeId CamReceiver::GetTypeId() {
-  static TypeId tid = TypeId("ns3::CamReceiver")
-                          .SetParent<Application>()
-                          .SetGroupName("Applications")
-                          .AddConstructor<CamReceiver>();
+// ==================== CamReceiverDSRC ====================
+NS_OBJECT_ENSURE_REGISTERED(CamReceiverDSRC);
+TypeId CamReceiverDSRC::GetTypeId() {
+  static TypeId tid = TypeId("ns3::CamReceiverDSRC")
+                          .SetParent<CamReceiver>()
+                          .AddConstructor<CamReceiverDSRC>();
   return tid;
 }
-
-CamReceiver::CamReceiver() : m_socket(nullptr), m_vehicleId(0), m_packetsReceived(0) {}
-
-CamReceiver::~CamReceiver() { m_socket = nullptr; }
-
-void CamReceiver::SetVehicleId(const uint32_t id) { m_vehicleId = id; }
-
-void CamReceiver::SetReplyFunction(std::function<void(const std::string&)> replyFunction) {
-  m_replyFunction = replyFunction;
+TypeId CamSenderDSRC::GetTypeId() {
+  static TypeId tid = TypeId("ns3::CamSenderDSRC")
+                          .SetParent<CamSender>()
+                          .AddConstructor<CamSenderDSRC>();
+  return tid;
 }
-
-void CamReceiver::StartApplication() {
+void CamReceiverDSRC::StartApplication() {
   if (!m_socket) {
     m_socket = Socket::CreateSocket(GetNode(), TypeId::LookupByName("ns3::PacketSocketFactory"));
 
@@ -164,17 +179,18 @@ void CamReceiver::StartApplication() {
     m_socket->Bind(socketAddr);
   }
 
-  m_socket->SetRecvCallback(MakeCallback(&CamReceiver::HandleRead, this));
+  m_socket->SetRecvCallback(MakeCallback(&CamReceiverDSRC::HandleRead, this));
 }
 
-void CamReceiver::StopApplication() {
+void CamReceiverDSRC::StopApplication() {
   if (m_socket) {
     m_socket->SetRecvCallback(MakeNullCallback<void, Ptr<Socket>>());
     m_socket->Close();
   }
 }
 
-void CamReceiver::HandleRead(Ptr<Socket> socket) {
+void CamReceiverDSRC::HandleRead(Ptr<Socket> socket) {
+  // std::cout << "[DEBUG] CamReceiverDSRC::HandleRead called\n";
   Ptr<Packet> packet;
   Address from;
 
@@ -193,7 +209,7 @@ void CamReceiver::HandleRead(Ptr<Socket> socket) {
       double dx = myPos.x - geoHeader.GetSourcePositionX();
       double dy = myPos.y - geoHeader.GetSourcePositionY();
       double distance = std::sqrt(dx * dx + dy * dy);
-
+      std::cout << "[DEBUG] CamReceiverDSRC::HandleRead distance: " << distance << ", radius: " << geoHeader.GetRadius() << "\n";
       if (distance <= geoHeader.GetRadius()) {
         if (geoHeader.GetNextHeader() == PROT_NUM_CAM) {
           CamHeader camHeader;
@@ -216,7 +232,11 @@ void CamReceiver::HandleRead(Ptr<Socket> socket) {
           try{
             if(m_replyFunction) {
               std::string msg = R"({"type":"cam_received",)"
-                                R"("sender_id":)" + std::to_string(camHeader.GetVehicleId()) + R"(,"receiver_id":)" + std::to_string(m_vehicleId) + R"(,"timestamp":)" + std::to_string(Simulator::Now().GetMilliSeconds()) + R"(})";
+                                R"("sender_id":)" + std::to_string(camHeader.GetVehicleId()) +
+                                R"(,"receiver_id":)" + std::to_string(m_vehicleId) + 
+                                R"(,"receive_timestamp":)" + std::to_string(Simulator::Now().GetMilliSeconds()) +
+                                R"(,"send_timestamp":)" + std::to_string(camHeader.GetTimestamp()) +
+                                R"(})";
               m_replyFunction(msg);
             }
           } catch(std::exception &e){ 

@@ -8,24 +8,21 @@
 
 namespace ns3 {
 
-class CamSender final : public Application {
+class CamSender : public Application {
 public:
     static TypeId GetTypeId();
     CamSender();
     ~CamSender() override;
-
-    void SetVehicleId(uint32_t id);
-    void SetInterval(const Time& interval);
-    void SetBroadcastRadius(uint16_t radius);
-
-    void SendCam();
-    bool isRunning();
-
-private:
+    virtual void SetVehicleId(uint32_t id);
+    virtual void SetInterval(const Time& interval);
+    virtual void SetBroadcastRadius(uint16_t radius);
+    virtual void SendCam(uint32_t bytes = 0, bool addCamHeader = true, bool addGeoNetHeader = true);
+    bool IsRunning();
+protected:
+    // Application lifecycle hooks (to be overridden)
     void StartApplication() override;
     void StopApplication() override;
-
-    void ScheduleNextCam();
+    virtual void ScheduleNextCam();
 
     Ptr<Socket> m_socket;
     uint32_t m_vehicleId;
@@ -37,26 +34,46 @@ private:
     Ptr<UniformRandomVariable> m_jitterRng;
 };
 
-class CamReceiver final : public Application {
+class CamReceiver : public Application {
 public:
     static TypeId GetTypeId();
     CamReceiver();
     ~CamReceiver() override;
-    void SetVehicleId(uint32_t id);
-    void SetReplyFunction(std::function<void(const std::string&)> replyFunction);
-    
-private:
+    virtual void SetVehicleId(uint32_t id);
+    virtual void SetReplyFunction(std::function<void(const std::string&)> replyFunction);
+protected:
     void StartApplication() override;
     void StopApplication() override;
-
-    void HandleRead(Ptr<Socket> socket);
-
+    virtual void HandleRead(Ptr<Socket> socket);
     Ptr<Socket> m_socket;
     uint32_t m_vehicleId;
     uint32_t m_packetsReceived;
-    std::function<void(const std::string&)> m_replyFunction = nullptr;
+    std::function<void(const std::string&)> m_replyFunction;
 };
 
-}
+
+
+// ==================== DSRC derived classes ====================
+class CamSenderDSRC : public CamSender {
+public:
+  static TypeId GetTypeId();
+//   CamSenderDSRC();
+//   ~CamSenderDSRC() override;
+  void StartApplication() override;
+  void StopApplication() override;
+  void SendCam(uint32_t bytes = 0, bool addCamHeader = true, bool addGeoNetHeader = true) override;
+};
+class CamReceiverDSRC : public CamReceiver {
+public:
+  static TypeId GetTypeId();
+//   CamReceiverDSRC();
+//   ~CamReceiverDSRC() override;
+  void StartApplication() override;
+  void StopApplication() override;
+  void HandleRead(Ptr<Socket> socket) override;
+};
+
+
+} // namespace ns3
 
 #endif

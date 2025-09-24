@@ -105,8 +105,8 @@ void ProcessData_TransferRequests(const json &requests){
           << source_index << "id = " << source << "\n";
         continue;
       }
-      if(senders[source_index]->isRunning())
-        senders[source_index]->SendCam();
+      if(senders[source_index]->IsRunning())
+        senders[source_index]->SendCam((uint32_t)size, true, true);
     }
   }
 }
@@ -329,7 +329,7 @@ void SocketSenderServerDisconnect() {
   }
 }
 
-void InitializeVehicles(uint32_t nVehicles = 3){
+void InitializeVehicles_DSRC(uint32_t nVehicles = 3){
   vehicles = NodeContainer();
   vehicles.Create(nVehicles);
 
@@ -375,7 +375,7 @@ void InitializeVehicles(uint32_t nVehicles = 3){
   }
 
   for (uint32_t i = 0; i < nVehicles; i++) {
-    Ptr<CamSender> sender = CreateObject<CamSender>();
+    Ptr<CamSenderDSRC> sender = CreateObject<CamSenderDSRC>();
     sender->SetVehicleId(i + 1);
     sender->SetInterval(Seconds(camInterval));
     sender->SetBroadcastRadius(1000);
@@ -384,7 +384,7 @@ void InitializeVehicles(uint32_t nVehicles = 3){
     sender->SetStopTime(Seconds(simTime));
     senders[i] = sender;
 
-    Ptr<CamReceiver> receiver = CreateObject<CamReceiver>();
+    Ptr<CamReceiverDSRC> receiver = CreateObject<CamReceiverDSRC>();
     receiver->SetVehicleId(i + 1);
     vehicles.Get(i)->AddApplication(receiver);
     receiver->SetStartTime(Seconds(0.0));
