@@ -40,6 +40,8 @@ std::mutex dataMutex;
 std::atomic firstDataReceived(false);
 bool running = true;
 
+int send_to_carla_fd = -1;
+
 void ProcessData_VehiclePosition(const json& vehicleArray) {
   for (const auto &vehicle : vehicleArray) {
     int id = vehicle["carla_id"];
@@ -171,11 +173,27 @@ void ProcessJsonData(const std::string &data) {
   }
 }
 
+void ProcessReceivedData(std::string &receive_buffer) {
+  size_t pos;
+  while ((pos = receive_buffer.find('\n')) != std::string::npos) {
+    std::string complete_message = receive_buffer.substr(0, pos);
+    receive_buffer.erase(0, pos + 1);
+    if (!complete_message.empty()) {
+      try {
+          ProcessJsonData(complete_message);
+      } catch (const std::exception& e) {
+          std::cerr << "[ERR] Failed to process message: " << e.what() << std::endl;
+          std::cerr << "Raw message: " << complete_message << std::endl;
+      }
+    }
+  }
+}
 
-void SocketServerThread() {
+void SocketReceiverServerThread() {
   sockaddr_in address{};
   int addrlen = sizeof(address);
   char buffer[8192];
+  std::string receive_buffer_string;
 
   int server_fd = socket(AF_INET, SOCK_STREAM, 0);
   if (server_fd < 0) {
@@ -210,20 +228,22 @@ void SocketServerThread() {
     return;
   }
 
-  std::cout << "[INFO] Carla connected.\n";
+  std::cout << "[INFO] Carla connected on port 5556.\n";
 
   while (running) {
     memset(buffer, 0, sizeof(buffer));
     const ssize_t bytes = recv(client_fd, buffer, sizeof(buffer) - 1, 0);
 
     if (bytes <= 0) {
-      std::cout << "[INFO] Carla disconnected or error.\n";
+      std::cout << "[INFO] Carla disconnected or error on port 5556.\n";
       break;
     }
 
     buffer[bytes] = '\0';
 
-    ProcessJsonData(std::string(buffer));
+    // ProcessJsonData(std::string(buffer));
+    receive_buffer_string = std::string(buffer);
+    ProcessReceivedData(receive_buffer_string);
   }
 
   close(client_fd);
@@ -260,9 +280,29 @@ void UpdateVehiclePositions() {
 }
 
 void SendSimulationEndSignal() {
-  int client_fd = socket(AF_INET, SOCK_STREAM, 0);
-  if (client_fd < 0) {
-    perror("socket failed");
+  std::string msg = R"({"type": "simulation_end"})";
+  SendMsgToCarla(msg);
+}
+
+void SendMsgToCarla(const std::string &msg) {
+  if(send_to_carla_fd < 0){ //if not connected, try to connect for once
+    SocketSenderServerConnect();
+    if(send_to_carla_fd < 0){
+      std::cerr << "[ERR] send_to_carla_fd is not connected\n";
+      return;
+    }
+  }
+  if (send(send_to_carla_fd, msg.c_str(), msg.size(), 0) < 0) {
+    std::cerr << "[ERR] send failed, send_to_carla_fd = " << send_to_carla_fd << "\n";
+    perror("[ERR] send failed");
+  }
+}
+
+
+void SocketSenderServerConnect() {
+  send_to_carla_fd = socket(AF_INET, SOCK_STREAM, 0);
+  if (send_to_carla_fd < 0) {
+    perror("[ERR] socket failed");
     return;
   }
 
@@ -271,18 +311,21 @@ void SendSimulationEndSignal() {
   address.sin_addr.s_addr = inet_addr("127.0.0.1");
   address.sin_port = htons(5557);
 
-  if (connect(client_fd, reinterpret_cast<sockaddr*>(&address), sizeof(address)) < 0) {
-    perror("connect failed");
-    close(client_fd);
+  if (connect(send_to_carla_fd, reinterpret_cast<sockaddr*>(&address), sizeof(address)) < 0) {
+    perror("[ERR] connect failed");
+    close(send_to_carla_fd);
+    send_to_carla_fd = -1;
     return;
   }
+  std::cout << "[INFO] Connected to Carla on port 5557.\n";
+}
 
-  const char* end_signal = "{\"type\":\"simulation_end\"}\n";
-  if (send(client_fd, end_signal, strlen(end_signal), 0) < 0) {
-    perror("send failed");
+void SocketSenderServerDisconnect() {
+  if (send_to_carla_fd != -1) {
+    close(send_to_carla_fd);
+    send_to_carla_fd = -1;
+    std::cout << "[INFO] Disconnected from Carla on port 5557.\n";
   }
-
-  close(client_fd);
 }
 
 void InitializeVehicles(uint32_t nVehicles = 3){
@@ -349,6 +392,7 @@ void InitializeVehicles(uint32_t nVehicles = 3){
   }
   std::cout << "[INFO] vehiclesInitialized\n";
 }
+
 int main(int argc, char *argv[]) {
 
   LogComponentEnable("CamApplication", LOG_LEVEL_INFO);
@@ -359,12 +403,13 @@ int main(int argc, char *argv[]) {
   cmd.Parse(argc, argv);
 
   Simulator::SetImplementation(CreateObject<RealtimeSimulatorImpl>());
-  std::thread serverThread(SocketServerThread);
+  std::thread serverReceiverThread(SocketReceiverServerThread);
   
   std::cout << "[INFO] Waiting for first Carla data...\n";
   while (!firstDataReceived) {
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
   }
+  SocketSenderServerConnect();
 
   std::cout << "[INFO] Starting simulation!\n";
   Simulator::Schedule(Seconds(0.1), &UpdateVehiclePositions);
@@ -372,8 +417,9 @@ int main(int argc, char *argv[]) {
   Simulator::Run();
 
   running = false;
-  serverThread.join();
+  serverReceiverThread.join();
   SendSimulationEndSignal();
+  SocketSenderServerDisconnect();
   Simulator::Destroy();
 
   std::cout << "[INFO] Simulation finished.\n";

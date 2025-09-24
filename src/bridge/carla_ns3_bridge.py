@@ -70,6 +70,11 @@ class CarlaNs3Bridge:
                                 logger.info("Received simulation end signal from NS-3")
                                 self.running = False
                                 break
+                            elif message.get("type") == "info":
+                                receiver_id = message.get("receiver_id")
+                                sender_id = message.get("sender_id")
+                                print(f"Info from NS-3: {receiver_id} received msg from {sender_id}")
+                                logger.info(f"Info from NS-3: {receiver_id} received msg from {sender_id}")
                         except json.JSONDecodeError:
                             pass
                     client_socket.close()
