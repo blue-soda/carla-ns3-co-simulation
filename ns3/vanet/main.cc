@@ -175,7 +175,7 @@ void ProcessJsonData(const std::string &data) {
 
 void ProcessReceivedData(std::string &receive_buffer) {
   size_t pos;
-  while ((pos = receive_buffer.find('\n')) != std::string::npos) {
+  while ((pos = receive_buffer.find("\n\r")) != std::string::npos) {
     std::string complete_message = receive_buffer.substr(0, pos);
     receive_buffer.erase(0, pos + 1);
     if (!complete_message.empty()) {
@@ -285,6 +285,7 @@ void SendSimulationEndSignal() {
 }
 
 void SendMsgToCarla(const std::string &msg) {
+  std::cout << "[INFO] SendMsgToCarla: " << msg << ", send_to_carla_fd: " << send_to_carla_fd << "\n";
   if(send_to_carla_fd < 0){ //if not connected, try to connect for once
     SocketSenderServerConnect();
     if(send_to_carla_fd < 0){
@@ -388,6 +389,9 @@ void InitializeVehicles(uint32_t nVehicles = 3){
     vehicles.Get(i)->AddApplication(receiver);
     receiver->SetStartTime(Seconds(0.0));
     receiver->SetStopTime(Seconds(simTime));
+    receiver->SetReplyFunction([](const std::string& msg) {
+      return SendMsgToCarla(msg);
+    });
     receivers[i] = receiver;
   }
   std::cout << "[INFO] vehiclesInitialized\n";
@@ -395,7 +399,7 @@ void InitializeVehicles(uint32_t nVehicles = 3){
 
 int main(int argc, char *argv[]) {
 
-  LogComponentEnable("CamApplication", LOG_LEVEL_INFO);
+  LogComponentEnable("CamApplication", LOG_ALL);
 
   CommandLine cmd;
   cmd.AddValue("simTime", "Simulation time (s)", simTime);

@@ -43,6 +43,7 @@ public:
     CamReceiver();
     ~CamReceiver() override;
     void SetVehicleId(uint32_t id);
+    void SetReplyFunction(std::function<void(const std::string&)> replyFunction);
     
 private:
     void StartApplication() override;
@@ -53,6 +54,7 @@ private:
     Ptr<Socket> m_socket;
     uint32_t m_vehicleId;
     uint32_t m_packetsReceived;
+    std::function<void(const std::string&)> m_replyFunction = nullptr;
 };
 
 }

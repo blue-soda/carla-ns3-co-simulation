@@ -58,10 +58,9 @@ class CarlaNs3Bridge:
             self.receiver_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             self.receiver_socket.bind((self.ns3_host, self.ns3_recv_port))
             self.receiver_socket.listen(1)
-            
+            client_socket, addr = self.receiver_socket.accept()
             while self.running:
                 try:
-                    client_socket, _ = self.receiver_socket.accept()
                     data = client_socket.recv(1024)
                     if data:
                         try:
@@ -70,19 +69,19 @@ class CarlaNs3Bridge:
                                 logger.info("Received simulation end signal from NS-3")
                                 self.running = False
                                 break
-                            elif message.get("type") == "info":
+                            elif message.get("type") == "cam_received":
                                 receiver_id = message.get("receiver_id")
                                 sender_id = message.get("sender_id")
-                                print(f"Info from NS-3: {receiver_id} received msg from {sender_id}")
-                                logger.info(f"Info from NS-3: {receiver_id} received msg from {sender_id}")
+                                logger.info(f"Info from NS-3: Vehicle {receiver_id} received msg from Vehicle {sender_id}")
                         except json.JSONDecodeError:
                             pass
-                    client_socket.close()
+                    # client_socket.close()
                 except socket.error:
                     break
         except Exception as e:
             logger.error(f"Error in end signal listener: {e}")
         finally:
+            client_socket.close()
             if self.receiver_socket:
                 self.receiver_socket.close()
 
@@ -110,8 +109,8 @@ class CarlaNs3Bridge:
         try:
             message_obj = {"type": msg_type, msg_type: data}
             message = json.dumps(message_obj)
-            self.socket.sendall((message + "\n").encode('utf-8'))
-            logger.info(f"Sent {len(message)} bytes to NS-3 successfully")
+            self.socket.sendall((message + "\n\r").encode('utf-8'))
+            # logger.info(f"Sent {len(message)} bytes to NS-3 successfully")
             return True
         except Exception as e:
             logger.error(f"Error sending vehicle states: {e}")

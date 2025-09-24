@@ -150,6 +150,10 @@ CamReceiver::~CamReceiver() { m_socket = nullptr; }
 
 void CamReceiver::SetVehicleId(const uint32_t id) { m_vehicleId = id; }
 
+void CamReceiver::SetReplyFunction(std::function<void(const std::string&)> replyFunction) {
+  m_replyFunction = replyFunction;
+}
+
 void CamReceiver::StartApplication() {
   if (!m_socket) {
     m_socket = Socket::CreateSocket(GetNode(), TypeId::LookupByName("ns3::PacketSocketFactory"));
@@ -208,6 +212,18 @@ void CamReceiver::HandleRead(Ptr<Socket> socket) {
                       << " GeoNet sourceId: " << geoHeader.GetSourceId());
 
           m_packetsReceived++;
+
+          try{
+            if(m_replyFunction) {
+              std::string msg = R"({"type":"cam_received",)"
+                                R"("sender_id":)" + std::to_string(camHeader.GetVehicleId()) + R"(,"receiver_id":)" + std::to_string(m_vehicleId) + R"(,"timestamp":)" + std::to_string(Simulator::Now().GetMilliSeconds()) + R"(})";
+              m_replyFunction(msg);
+            }
+          } catch(std::exception &e){ 
+            NS_LOG_ERROR("CamReceiver::HandleRead m_replyFunction error: " << e.what());
+          } catch (...) { 
+            NS_LOG_ERROR("CamReceiver::HandleRead m_replyFunction: unknown exception caught");
+          }
         }
       } else {
         NS_LOG_INFO("Node " << GetNode()->GetId() << " (Vehicle " << m_vehicleId << ")" 
