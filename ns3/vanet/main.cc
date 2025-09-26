@@ -52,7 +52,6 @@ void ProcessData_VehiclePosition(const json& vehicleArray) {
       senders[index]->SetVehicleId(id);
       receivers[index]->SetVehicleId(id);
     }
-    // if (static_cast<uint32_t>(id) >= vehicles.GetN()) continue;
     if(!carlaIdToIndex.count(id)) {
       std::cerr << "[WARN] " << id << " skipped during ProcessData_VehiclePosition\n";
       continue;
@@ -65,18 +64,17 @@ void ProcessData_VehiclePosition(const json& vehicleArray) {
     latestPositions[id] = pos;
     latestVelocities[id] = vel;
 
-    const double heading = vehicle.value("heading", 0.0);
-    const double speed   = vehicle.value("speed", 0.0);
-    
-    std::cout << "[INFO] Vehicle " << id
-              << " @ (" << pos.x << "," << pos.y << ")"
-              << " heading: " << heading << "°"
-              << " speed: " << speed << " m/s\n";
+    // if(!indexBindToCarlaId){
+    //   const double heading = vehicle.value("heading", 0.0);
+    //   const double speed   = vehicle.value("speed", 0.0);
+
+    //   std::cout << "[INFO] Vehicle " << id << " index(" << carlaIdToIndex[id] << ") position"
+    //             << " @ (" << pos.x << "," << pos.y << ")"
+    //             << " heading: " << heading << "°"
+    //             << " speed: " << speed << " m/s\n";
+    // }
   }
-  if(!indexBindToCarlaId){
-    indexBindToCarlaId = true;
-    std::cout << "[INFO] indexBindToCarlaId\n";
-  }
+  indexBindToCarlaId = true;
 }
 
 void ProcessData_TransferRequests(const json &requests){
@@ -105,22 +103,23 @@ void ProcessData_TransferRequests(const json &requests){
           << source_index << "id = " << source << "\n";
         continue;
       }
-      if(senders[source_index]->IsRunning())
+      if(senders[source_index]->IsRunning()){
+        std::cout << "[INFO] sender index: " << source_index << " id: " << source << " sending " << size << " bytes\n";
         senders[source_index]->SendCam((uint32_t)size, true, true);
+      }
     }
   }
 }
 
 void ProcessData_VehiclesNum(const int &num){
   uint32_t unum = (uint32_t)num;
-  if(nVehicles != unum){
-    nVehicles = unum;
+  if(nVehicles < unum){
+    std::cout << "[INFO] Vehicles number changed: " << nVehicles << " -> " << unum << "\n";
     InitializeVehicles(unum);
     indexBindToCarlaId = false;
   }
-  std::cout << "[INFO] ProcessData_VehiclesNum: " << nVehicles << "\n";
+  // std::cout << "[INFO] ProcessData_VehiclesNum: " << nVehicles << "\n";
 }
-
 
 void ProcessJsonData(const std::string &data) {
   try {
@@ -271,7 +270,7 @@ void UpdateVehiclePositions() {
       }
     }
     if (running) {
-      Simulator::Schedule(Seconds(0.1), &UpdateVehiclePositions);
+      Simulator::Schedule(Seconds(0.05), &UpdateVehiclePositions);
     }
   } 
   catch(std::exception &e){ std::cerr << "[ERR] UpdateVehiclePositions error: " << e.what() << "\n"; }
@@ -329,23 +328,46 @@ void SocketSenderServerDisconnect() {
   }
 }
 
-void InitializeVehicles_DSRC(uint32_t nVehicles = 3){
-  vehicles = NodeContainer();
-  vehicles.Create(nVehicles);
+void InitializeVehicles_DSRC(uint32_t n_vehicles = 3){
+  if(nVehicles >= n_vehicles) return;
 
-  senders.clear();
-  senders.resize(nVehicles);
+  NodeContainer new_vehicles = NodeContainer();
+  uint32_t new_vehicles_num = n_vehicles - nVehicles;
+  // uint32_t new_vehicles_num = n_vehicles;
+  new_vehicles.Create(new_vehicles_num);
 
-  receivers.clear();
-  receivers.resize(nVehicles);
+  // senders.clear();
+  // senders.resize(nVehicles);
 
+  // receivers.clear();
+  // receivers.resize(nVehicles);
+
+  std::cout << "[INFO] Installing MobilityModel\n";
+  MobilityHelper mobility;
+  Ptr<ListPositionAllocator> positionAlloc = CreateObject<ListPositionAllocator>();
+  for (uint32_t i = 0; i < new_vehicles_num; i++) {
+    positionAlloc->Add(Vector(0, 0, 0));
+  }
+
+  mobility.SetPositionAllocator(positionAlloc);
+  mobility.SetMobilityModel("ns3::ConstantVelocityMobilityModel");
+  mobility.Install(new_vehicles);
+
+  for (uint32_t i = 0; i < new_vehicles_num; i++) {
+    Ptr<ConstantVelocityMobilityModel> mob =
+        new_vehicles.Get(i)->GetObject<ConstantVelocityMobilityModel>();
+    mob->SetVelocity(Vector(0, 0, 0));
+  }
+
+  std::cout << "[INFO] Installing PacketSocket\n";
   PacketSocketHelper packetSocketHelper;
-  packetSocketHelper.Install(vehicles);
+  packetSocketHelper.Install(new_vehicles);
 
+  std::cout << "[INFO] Installing Wifi\n";
   WifiHelper wifi;
   wifi.SetStandard(WIFI_STANDARD_80211p);
   wifi.SetRemoteStationManager("ns3::ConstantRateWifiManager", "DataMode",
-                               StringValue("OfdmRate6Mbps"), "ControlMode",
+                               StringValue("OfdmRate54Mbps"), "ControlMode",
                                StringValue("OfdmRate6Mbps"));
 
   YansWifiChannelHelper wifiChannel = YansWifiChannelHelper::Default();
@@ -355,46 +377,34 @@ void InitializeVehicles_DSRC(uint32_t nVehicles = 3){
   WifiMacHelper wifiMac;
   wifiMac.SetType("ns3::AdhocWifiMac");
 
-  NetDeviceContainer devices = wifi.Install(wifiPhy, wifiMac, vehicles);
+  NetDeviceContainer devices = wifi.Install(wifiPhy, wifiMac, new_vehicles);
   wifiPhy.EnablePcap("../../temp/carla-vanet", devices);
 
-  MobilityHelper mobility;
-  Ptr<ListPositionAllocator> positionAlloc = CreateObject<ListPositionAllocator>();
-  for (uint32_t i = 0; i < nVehicles; i++) {
-    positionAlloc->Add(Vector(0, 0, 0));
-  }
-
-  mobility.SetPositionAllocator(positionAlloc);
-  mobility.SetMobilityModel("ns3::ConstantVelocityMobilityModel");
-  mobility.Install(vehicles);
-
-  for (uint32_t i = 0; i < nVehicles; i++) {
-    Ptr<ConstantVelocityMobilityModel> mob =
-        vehicles.Get(i)->GetObject<ConstantVelocityMobilityModel>();
-    mob->SetVelocity(Vector(0, 0, 0));
-  }
-
-  for (uint32_t i = 0; i < nVehicles; i++) {
+  std::cout << "[INFO] Installing Cam applications\n";
+  for (uint32_t i = 0; i < new_vehicles_num; i++) {
     Ptr<CamSenderDSRC> sender = CreateObject<CamSenderDSRC>();
-    sender->SetVehicleId(i + 1);
+    sender->SetVehicleId(nVehicles + i + 1);
     sender->SetInterval(Seconds(camInterval));
     sender->SetBroadcastRadius(1000);
-    vehicles.Get(i)->AddApplication(sender);
+    new_vehicles.Get(i)->AddApplication(sender);
     sender->SetStartTime(Seconds(0.0));
     sender->SetStopTime(Seconds(simTime));
-    senders[i] = sender;
+    senders.push_back(sender);
 
     Ptr<CamReceiverDSRC> receiver = CreateObject<CamReceiverDSRC>();
-    receiver->SetVehicleId(i + 1);
-    vehicles.Get(i)->AddApplication(receiver);
+    receiver->SetVehicleId(nVehicles + i + 1);
+    new_vehicles.Get(i)->AddApplication(receiver);
     receiver->SetStartTime(Seconds(0.0));
     receiver->SetStopTime(Seconds(simTime));
     receiver->SetReplyFunction([](const std::string& msg) {
       return SendMsgToCarla(msg);
     });
-    receivers[i] = receiver;
+    receivers.push_back(receiver);
   }
-  std::cout << "[INFO] vehiclesInitialized\n";
+  nVehicles = n_vehicles;
+  vehicles.Add(new_vehicles);
+  // vehicles = new_vehicles;
+  std::cout << "[INFO] vehiclesInitialized with " << vehicles.GetN() << " nodes.\n";
 }
 
 int main(int argc, char *argv[]) {

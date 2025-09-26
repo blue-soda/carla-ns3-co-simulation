@@ -140,10 +140,33 @@ void CamSenderDSRC::SendCam(uint32_t bytes, bool addCamHeader, bool addGeoNetHea
     packet->AddAtEnd(padding);
   }
 
+  for (uint32_t i = 0; i < GetNode()->GetNDevices(); ++i) {
+    Ptr d = GetNode()->GetDevice(i);
+    std::cout << "Node " << GetNode()->GetId()
+    << " device["<<i<<"] type=" << d->GetInstanceTypeId().GetName()
+    << " ifindex=" << d->GetIfIndex() << "\n";
+  }
+
+  Ptr dev = GetNode()->GetDevice(0);
+    std::cout << Simulator::Now().GetSeconds() << "s: send from node=" << GetNode()->GetId()
+    << " devPtr=" << dev << " dev->GetNodeId()=" << dev->GetNode()->GetId()
+    << " devType=" << dev->GetInstanceTypeId().GetName()
+    << " devIfIndex=" << dev->GetIfIndex() << "\n";
+
   PacketSocketAddress destination;
   destination.SetProtocol(0);
   destination.SetSingleDevice(GetNode()->GetDevice(0)->GetIfIndex());
   destination.SetPhysicalAddress(Mac48Address::GetBroadcast());
+
+  Ptr<MobilityModel> mm = GetNode()->GetObject<MobilityModel>(); 
+  if (mm == nullptr) { 
+    std::cout << "Node " << GetNode()->GetId() << " has no MobilityModel at " << 
+    Simulator::Now().GetSeconds() << "s\n"; } 
+  else { 
+    Vector p = mm->GetPosition(); 
+    std::cout << "Node " << GetNode()->GetId() << " mobility ok: pos(" << p.x << "," << p.y << ")\n"; 
+  } 
+  std::cout << "Sending from node " << GetNode()->GetId() << " ifindex=" << GetNode()->GetDevice(0)->GetIfIndex() << " to ifindex=" << destination.GetSingleDevice() << " at " << Simulator::Now().GetSeconds() << "s\n";
 
   m_socket->SendTo(packet, 0, destination);
 
@@ -190,6 +213,7 @@ void CamReceiverDSRC::StopApplication() {
 }
 
 void CamReceiverDSRC::HandleRead(Ptr<Socket> socket) {
+  // return;
   // std::cout << "[DEBUG] CamReceiverDSRC::HandleRead called\n";
   Ptr<Packet> packet;
   Address from;
