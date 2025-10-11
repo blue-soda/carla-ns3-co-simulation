@@ -10,7 +10,7 @@ GeoNetHeader::GeoNetHeader()
       m_sourcePositionX(0.0),
       m_sourcePositionY(0.0),
       m_sourceId(0),
-      m_radius(1000),
+      m_radius(10000),
       m_lifetime(60) {}
 
 GeoNetHeader::~GeoNetHeader() {}
@@ -209,4 +209,4 @@ void CamHeader::SetTimestamp(const uint64_t timestamp) { m_timestamp = timestamp
 
 uint64_t CamHeader::GetTimestamp() const { return m_timestamp; }
 
-}
+} // namespace ns3

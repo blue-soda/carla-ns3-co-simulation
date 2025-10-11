@@ -14,9 +14,11 @@ public:
     CamSender();
     ~CamSender() override;
     virtual void SetVehicleId(uint32_t id);
+    virtual void SetIp(const Ipv4Address& addr);
+    virtual void SetPort(uint16_t port);
     virtual void SetInterval(const Time& interval);
     virtual void SetBroadcastRadius(uint16_t radius);
-    virtual void SendCam(uint32_t bytes = 0, bool addCamHeader = true, bool addGeoNetHeader = true);
+    virtual void SendCam(uint32_t bytes, Ipv4Address dest_addr);
     bool IsRunning();
 protected:
     // Application lifecycle hooks (to be overridden)
@@ -25,6 +27,8 @@ protected:
     virtual void ScheduleNextCam();
 
     Ptr<Socket> m_socket;
+    Ipv4Address m_addr;
+    uint16_t m_port{5000};
     uint32_t m_vehicleId;
     Time m_interval;
     uint16_t m_radius;
@@ -41,11 +45,15 @@ public:
     ~CamReceiver() override;
     virtual void SetVehicleId(uint32_t id);
     virtual void SetReplyFunction(std::function<void(const std::string&)> replyFunction);
+    virtual void SetIp(const Ipv4Address& addr);
+    virtual void SetPort(uint16_t port);
 protected:
     void StartApplication() override;
     void StopApplication() override;
     virtual void HandleRead(Ptr<Socket> socket);
     Ptr<Socket> m_socket;
+    Ipv4Address m_addr;
+    uint16_t m_port{5000};
     uint32_t m_vehicleId;
     uint32_t m_packetsReceived;
     std::function<void(const std::string&)> m_replyFunction;
@@ -57,17 +65,13 @@ protected:
 class CamSenderDSRC : public CamSender {
 public:
   static TypeId GetTypeId();
-//   CamSenderDSRC();
-//   ~CamSenderDSRC() override;
   void StartApplication() override;
   void StopApplication() override;
-  void SendCam(uint32_t bytes = 0, bool addCamHeader = true, bool addGeoNetHeader = true) override;
+  void SendCam(uint32_t bytes, Ipv4Address dest_addr) override;
 };
 class CamReceiverDSRC : public CamReceiver {
 public:
   static TypeId GetTypeId();
-//   CamReceiverDSRC();
-//   ~CamReceiverDSRC() override;
   void StartApplication() override;
   void StopApplication() override;
   void HandleRead(Ptr<Socket> socket) override;

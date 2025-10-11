@@ -3,6 +3,7 @@
 #include "ns3/network-module.h"
 #include "ns3/packet-socket-helper.h"
 #include "ns3/yans-wifi-helper.h"
+#include "ns3/internet-module.h"
 
 #include "cam-application.h"
 #include "carla_vanet.h"
@@ -28,6 +29,7 @@ double camInterval = 0.1;
 
 std::vector<Ptr<CamSender>> senders;
 std::vector<Ptr<CamReceiver>> receivers;
+std::vector<Ipv4Address> vehicleIps;
 
 std::map<int, int> indexToCarlaId;
 std::map<int, int> carlaIdToIndex;
@@ -98,14 +100,15 @@ void ProcessData_TransferRequests(const json &requests){
     
     if(indexBindToCarlaId){
       int source_index = carlaIdToIndex[source];
-      if(source_index >= (int)senders.size()){
-        std::cerr << "[ERR] index out range during ProcessData_TransferRequests, index = " 
-          << source_index << "id = " << source << "\n";
+      int target_index = carlaIdToIndex[target];
+      if(source_index >= (int)senders.size() || target_index >= (int)senders.size()){
+        std::cerr << "[ERR] index out range during ProcessData_TransferRequests, source_index = " 
+          << source_index << " id = " << source << ", or target_index = " << target_index << " id = " << target << "\n";
         continue;
       }
       if(senders[source_index]->IsRunning()){
         std::cout << "[INFO] sender index: " << source_index << " id: " << source << " sending " << size << " bytes\n";
-        senders[source_index]->SendCam((uint32_t)size, true, true);
+        senders[source_index]->SendCam((uint32_t)size, vehicleIps[target_index]);
       }
     }
   }
@@ -328,47 +331,42 @@ void SocketSenderServerDisconnect() {
   }
 }
 
+
+void PrintRoutingTable (Ptr<Node> node)
+{
+    Ptr<Ipv4> ipv4 = node->GetObject<Ipv4>();
+    Ipv4StaticRoutingHelper helper;
+    Ptr<Ipv4StaticRouting> routing = helper.GetStaticRouting(ipv4);
+    uint32_t nRoutes = routing->GetNRoutes();
+    std::cout << "Routing table of node " << node->GetId() << ":\n";
+    for (uint32_t i = 0; i < nRoutes; i++)
+    {
+        Ipv4RoutingTableEntry route = routing->GetRoute(i);
+        std::cout << route.GetDest() << "\t"
+                  << route.GetGateway() << "\t"
+                  << route.GetDestNetworkMask() << "\t"
+                  << route.GetInterface() << "\n";
+    }
+}
+
 void InitializeVehicles_DSRC(uint32_t n_vehicles = 3){
   if(nVehicles >= n_vehicles) return;
 
-  NodeContainer new_vehicles = NodeContainer();
-  uint32_t new_vehicles_num = n_vehicles - nVehicles;
-  // uint32_t new_vehicles_num = n_vehicles;
-  new_vehicles.Create(new_vehicles_num);
-
-  // senders.clear();
-  // senders.resize(nVehicles);
-
-  // receivers.clear();
-  // receivers.resize(nVehicles);
-
-  std::cout << "[INFO] Installing MobilityModel\n";
-  MobilityHelper mobility;
-  Ptr<ListPositionAllocator> positionAlloc = CreateObject<ListPositionAllocator>();
-  for (uint32_t i = 0; i < new_vehicles_num; i++) {
-    positionAlloc->Add(Vector(0, 0, 0));
-  }
-
-  mobility.SetPositionAllocator(positionAlloc);
-  mobility.SetMobilityModel("ns3::ConstantVelocityMobilityModel");
-  mobility.Install(new_vehicles);
-
-  for (uint32_t i = 0; i < new_vehicles_num; i++) {
-    Ptr<ConstantVelocityMobilityModel> mob =
-        new_vehicles.Get(i)->GetObject<ConstantVelocityMobilityModel>();
-    mob->SetVelocity(Vector(0, 0, 0));
-  }
-
-  std::cout << "[INFO] Installing PacketSocket\n";
-  PacketSocketHelper packetSocketHelper;
-  packetSocketHelper.Install(new_vehicles);
+  nVehicles = n_vehicles;
+  vehicles = NodeContainer();
+  vehicles.Create(n_vehicles);
+  senders.clear();
+  receivers.clear();
+  vehicleIps.clear();
 
   std::cout << "[INFO] Installing Wifi\n";
   WifiHelper wifi;
   wifi.SetStandard(WIFI_STANDARD_80211p);
-  wifi.SetRemoteStationManager("ns3::ConstantRateWifiManager", "DataMode",
-                               StringValue("OfdmRate54Mbps"), "ControlMode",
-                               StringValue("OfdmRate6Mbps"));
+  wifi.SetRemoteStationManager("ns3::ConstantRateWifiManager",
+                                 "DataMode",
+                                 StringValue("OfdmRate54Mbps"),
+                                 "ControlMode",
+                                 StringValue("OfdmRate54Mbps"));
 
   YansWifiChannelHelper wifiChannel = YansWifiChannelHelper::Default();
   YansWifiPhyHelper wifiPhy;
@@ -377,23 +375,61 @@ void InitializeVehicles_DSRC(uint32_t n_vehicles = 3){
   WifiMacHelper wifiMac;
   wifiMac.SetType("ns3::AdhocWifiMac");
 
-  NetDeviceContainer devices = wifi.Install(wifiPhy, wifiMac, new_vehicles);
+  NetDeviceContainer devices = wifi.Install(wifiPhy, wifiMac, vehicles);
   wifiPhy.EnablePcap("../../temp/carla-vanet", devices);
 
+  // std::cout << "[INFO] Installing PacketSocket\n";
+  // PacketSocketHelper packetSocketHelper;
+  // packetSocketHelper.Install(vehicles);
+  std::cout << "[INFO] Installing internet\n";
+  InternetStackHelper internet;
+  internet.Install(vehicles);
+  Ipv4AddressHelper ipv4;
+  ipv4.SetBase("10.1.0.0", "255.255.255.0");
+  Ipv4InterfaceContainer staIfs = ipv4.Assign(devices);
+  for(uint32_t i = 0; i < vehicles.GetN(); i++) {
+    Ptr<Ipv4> ipv4 = vehicles.Get(i)->GetObject<Ipv4>();
+    Ipv4Address addr = ipv4->GetAddress(1, 0).GetLocal();
+    std::cout << "[INFO] Vehicle " << i << " IP address: " << addr << "\n";
+  }
+
+  std::cout << "[INFO] Installing MobilityModel\n";
+  MobilityHelper mobility;
+  Ptr<ListPositionAllocator> positionAlloc = CreateObject<ListPositionAllocator>();
+  for (uint32_t i = 0; i < vehicles.GetN(); i++) {
+    positionAlloc->Add(Vector(0, 0, 0));
+  }
+
+  mobility.SetPositionAllocator(positionAlloc);
+  mobility.SetMobilityModel("ns3::ConstantVelocityMobilityModel");
+  mobility.Install(vehicles);
+
+  for (uint32_t i = 0; i < vehicles.GetN(); i++) {
+    Ptr<ConstantVelocityMobilityModel> mob =
+        vehicles.Get(i)->GetObject<ConstantVelocityMobilityModel>();
+    mob->SetVelocity(Vector(0, 0, 0));
+  }
+
   std::cout << "[INFO] Installing Cam applications\n";
-  for (uint32_t i = 0; i < new_vehicles_num; i++) {
+  for (uint32_t i = 0; i < vehicles.GetN(); i++) {
+    Ptr<Ipv4> ipv4 = vehicles.Get(i)->GetObject<Ipv4>();
+    Ipv4Address addr = ipv4->GetAddress(1, 0).GetLocal();
+    vehicleIps.push_back(addr);
+
     Ptr<CamSenderDSRC> sender = CreateObject<CamSenderDSRC>();
-    sender->SetVehicleId(nVehicles + i + 1);
+    sender->SetVehicleId(i + 1);
+    sender->SetIp(addr);
     sender->SetInterval(Seconds(camInterval));
     sender->SetBroadcastRadius(1000);
-    new_vehicles.Get(i)->AddApplication(sender);
+    vehicles.Get(i)->AddApplication(sender);
     sender->SetStartTime(Seconds(0.0));
     sender->SetStopTime(Seconds(simTime));
     senders.push_back(sender);
 
     Ptr<CamReceiverDSRC> receiver = CreateObject<CamReceiverDSRC>();
-    receiver->SetVehicleId(nVehicles + i + 1);
-    new_vehicles.Get(i)->AddApplication(receiver);
+    receiver->SetVehicleId(i + 1);
+    receiver->SetIp(addr);
+    vehicles.Get(i)->AddApplication(receiver);
     receiver->SetStartTime(Seconds(0.0));
     receiver->SetStopTime(Seconds(simTime));
     receiver->SetReplyFunction([](const std::string& msg) {
@@ -401,11 +437,14 @@ void InitializeVehicles_DSRC(uint32_t n_vehicles = 3){
     });
     receivers.push_back(receiver);
   }
-  nVehicles = n_vehicles;
-  vehicles.Add(new_vehicles);
-  // vehicles = new_vehicles;
+
+  for (uint32_t i = 0; i < vehicles.GetN(); ++i)
+  {
+      PrintRoutingTable(vehicles.Get(i));
+  }
   std::cout << "[INFO] vehiclesInitialized with " << vehicles.GetN() << " nodes.\n";
 }
+
 
 int main(int argc, char *argv[]) {
 
