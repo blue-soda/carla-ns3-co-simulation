@@ -108,7 +108,7 @@ void ProcessData_TransferRequests(const json &requests){
       }
       if(senders[source_index]->IsRunning()){
         std::cout << "[INFO] sender index: " << source_index << " id: " << source << " sending " << size << " bytes\n";
-        senders[source_index]->SendCam((uint32_t)size, vehicleIps[target_index]);
+        senders[source_index]->ScheduleCam((uint32_t)size, vehicleIps[target_index]);
       }
     }
   }

@@ -18,6 +18,7 @@ public:
     virtual void SetPort(uint16_t port);
     virtual void SetInterval(const Time& interval);
     virtual void SetBroadcastRadius(uint16_t radius);
+    virtual void ScheduleCam(uint32_t bytes, Ipv4Address dest_addr);
     virtual void SendCam(uint32_t bytes, Ipv4Address dest_addr);
     bool IsRunning();
 protected:

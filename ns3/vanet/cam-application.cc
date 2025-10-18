@@ -39,6 +39,9 @@ void CamSender::SetPort(const uint16_t port) { m_port = port; }
 void CamSender::SetInterval(const Time& interval) { m_interval = interval; }
 void CamSender::SetBroadcastRadius(const uint16_t radius) { m_radius = radius; }
 bool CamSender::IsRunning() { return m_running; };
+void CamSender::ScheduleCam(uint32_t bytes, Ipv4Address dest_addr) { 
+  Simulator::Schedule(Seconds(0), [this, bytes, dest_addr] { SendCam(bytes, dest_addr); });
+}
 void CamSender::SendCam(uint32_t bytes, Ipv4Address dest_addr) { std::cout << "[WARN] CamSender::SendCam should be overridden\n"; }
 void CamSender::StartApplication() { m_running = true; }
 void CamSender::StopApplication() {
@@ -104,6 +107,7 @@ void CamSenderDSRC::StopApplication() {
 }
 
 void CamSenderDSRC::SendCam(uint32_t bytes, Ipv4Address dest_addr) {
+
   NS_ASSERT(m_running);
   NS_ASSERT(m_socket);
 
