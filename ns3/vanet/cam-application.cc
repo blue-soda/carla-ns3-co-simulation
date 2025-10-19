@@ -228,6 +228,7 @@ void CamReceiverDSRC::HandleRead(Ptr<Socket> socket) {
         if (geoHeader.GetNextHeader() == PROT_NUM_CAM) {
           CamHeader camHeader;
           packet->RemoveHeader(camHeader);
+          auto packetSize = packet->GetSize();
 
           NS_LOG_INFO("Node " << GetNode()->GetId() << " (Vehicle " << m_vehicleId << ")" 
                       << " received CAM from Vehicle "
@@ -239,7 +240,9 @@ void CamReceiverDSRC::HandleRead(Ptr<Socket> socket) {
                       << " Heading: " << camHeader.GetHeading()
                       << " Timestamp: " << camHeader.GetTimestamp() << " ms"
                       << " Distance: " << distance << "m"
-                      << " GeoNet sourceId: " << geoHeader.GetSourceId());
+                      << " GeoNet sourceId: " << geoHeader.GetSourceId()
+                      << " Packet size: " << packetSize << " bytes"
+                    );
 
           m_packetsReceived++;
 
@@ -250,6 +253,8 @@ void CamReceiverDSRC::HandleRead(Ptr<Socket> socket) {
                                 R"(,"receiver_id":)" + std::to_string(m_vehicleId) + 
                                 R"(,"receive_timestamp":)" + std::to_string(Simulator::Now().GetMilliSeconds()) +
                                 R"(,"send_timestamp":)" + std::to_string(camHeader.GetTimestamp()) +
+                                R"(,"packet_size":)" + std::to_string(packetSize) +
+                                R"(,"is_last_packet":)" + std::to_string(true) + 
                                 R"(})";
               m_replyFunction(msg);
             }

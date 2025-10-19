@@ -9,6 +9,7 @@ from src.common.logger import logger
 
 from typing import Tuple, Optional, List
 
+# spawn_points = world.get_map().get_spawn_points()
 def connect_to_carla(host: str, port: int, timeout: float, synchronous: bool = False, 
                     fixed_delta_seconds: float = 0.05) -> Tuple[Optional[carla.Client], Optional[carla.World]]:
     """
@@ -92,11 +93,13 @@ def spawn_vehicles(world: carla.World, num_vehicles: int, vehicle_types: Optiona
         
         for i in range(num_vehicles):
             try: 
-                vehicle = world.try_spawn_actor(random.choice(vehicle_blueprints), random.choice(spawn_points))
+                # vehicle = world.try_spawn_actor(random.choice(vehicle_blueprints), random.choice(spawn_points))
+                vehicle = world.try_spawn_actor(random.choice(vehicle_blueprints), spawn_points[i % len(spawn_points)])
                 if vehicle:
                     spawned_vehicles.append(vehicle)
             except Exception as e:
                 logger.error(f"Error spawning vehicle: {e}")
+                print(e)
                 continue
                 
         return spawned_vehicles
