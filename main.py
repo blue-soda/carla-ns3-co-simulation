@@ -53,18 +53,18 @@ def main():
         while bridge.is_simulation_running():
             vehicle_data = collect_vehicle_data(all_vehicles)
             bridge.send_vehicles_position(vehicle_data)
-            if sent < 4:
+            if sent < 2:
                 time.sleep(2)
                 bridge.send_transfer_requests([
                 # {"source":ego_vehicle.id, "target":all_vehicles[0].id, "size":500},
-                # {"source":all_vehicles[1].id, "target":all_vehicles[2].id, "size":10052},
-                # {"source":all_vehicles[1].id, "target":all_vehicles[3].id, "size":20052},
+                {"source":all_vehicles[1].id, "target":all_vehicles[2].id, "size":10052},
+                # {"source":all_vehicles[2].id, "target":all_vehicles[3].id, "size":20052},
                 # {"source":all_vehicles[1].id, "target":all_vehicles[4].id, "size":30052},
-                {"source":all_vehicles[1].id, "target":all_vehicles[5].id, "size":50052},
-                {"source":all_vehicles[1].id, "target":all_vehicles[6].id, "size":60052},
-                {"source":all_vehicles[1].id, "target":all_vehicles[7].id, "size":65002},
-                {"source":all_vehicles[1].id, "target":all_vehicles[8].id, "size":67002},
-                {"source":all_vehicles[1].id, "target":all_vehicles[9].id, "size":70002},
+                # {"source":all_vehicles[5].id, "target":all_vehicles[1].id, "size":50052},
+                # {"source":all_vehicles[6].id, "target":all_vehicles[1].id, "size":60052},
+                # {"source":all_vehicles[7].id, "target":all_vehicles[1].id, "size":65002},
+                # {"source":all_vehicles[1].id, "target":all_vehicles[8].id, "size":67002},
+                # {"source":all_vehicles[1].id, "target":all_vehicles[9].id, "size":70002},
                 {"source":0, "target":2, "size":200},
                 ])
                 sent += 1

@@ -11,6 +11,7 @@
 #include "ns3/socket.h"
 #include "ns3/internet-module.h"
 
+
 namespace ns3 {
 
 NS_LOG_COMPONENT_DEFINE("CamApplication");
@@ -36,6 +37,10 @@ CamSender::~CamSender() { m_socket = nullptr; }
 void CamSender::SetVehicleId(const uint32_t id) { m_vehicleId = id; }
 void CamSender::SetIp(const Ipv4Address& addr) { m_addr = addr; }
 void CamSender::SetPort(const uint16_t port) { m_port = port; }
+void CamSender::SetBroadcastAddress(Ipv4Address addr, uint16_t port) {
+    m_broadcastAddr = addr;
+    m_port = port;
+}
 void CamSender::SetInterval(const Time& interval) { m_interval = interval; }
 void CamSender::SetBroadcastRadius(const uint16_t radius) { m_radius = radius; }
 bool CamSender::IsRunning() { return m_running; };
@@ -87,18 +92,7 @@ void CamSenderDSRC::StartApplication() {
   m_running = true;
 
   if (!m_socket) {
-    // m_socket = Socket::CreateSocket(
-    //     GetNode(), TypeId::LookupByName("ns3::PacketSocketFactory"));
-
-    // PacketSocketAddress socketAddr;
-    // socketAddr.SetProtocol(PROT_NUM_GEONETWORKING);
-    // socketAddr.SetSingleDevice(GetNode()->GetDevice(0)->GetIfIndex());
-    // socketAddr.SetPhysicalAddress(Mac48Address::GetBroadcast());
-    // m_socket->Bind(socketAddr);
     m_socket = Socket::CreateSocket(GetNode(), UdpSocketFactory::GetTypeId());
-    // m_socket->Bind(InetSocketAddress(Ipv4Address::GetAny(), m_port));
-    // m_socket->SetAllowBroadcast(true);
-    // m_socket->Connect(InetSocketAddress(Ipv4Address("255.255.255.255"), m_port));
   }
 }
 
@@ -144,15 +138,10 @@ void CamSenderDSRC::SendCam(uint32_t bytes, Ipv4Address dest_addr) {
   llc.SetType(PROT_NUM_GEONETWORKING);
   packet->AddHeader(llc);
 
-  // PacketSocketAddress destination;
-  // destination.SetProtocol(0);
-  // destination.SetSingleDevice(GetNode()->GetDevice(0)->GetIfIndex());
-  // destination.SetPhysicalAddress(Mac48Address::GetBroadcast());
   InetSocketAddress destination = InetSocketAddress(dest_addr, m_port); // dest port
   // m_socket->SetAllowBroadcast(true);
 
   m_socket->SendTo(packet, 0, destination);
-  // m_socket->Send(packet);
 
   m_packetsSent++;
   NS_LOG_INFO("Vehicle " << m_vehicleId << "(ip = " << m_addr << ") sent CAM at "
@@ -179,11 +168,6 @@ TypeId CamSenderDSRC::GetTypeId() {
 }
 void CamReceiverDSRC::StartApplication() {
   if (!m_socket) {
-    // m_socket = Socket::CreateSocket(GetNode(), TypeId::LookupByName("ns3::PacketSocketFactory"));
-    // PacketSocketAddress socketAddr;
-    // socketAddr.SetProtocol(0);
-    // socketAddr.SetSingleDevice(GetNode()->GetDevice(0)->GetIfIndex());
-    // m_socket->Bind(socketAddr);
     m_socket = Socket::CreateSocket(GetNode(), UdpSocketFactory::GetTypeId());
     InetSocketAddress local = InetSocketAddress(Ipv4Address::GetAny(), m_port);
     m_socket->Bind(local);
@@ -273,6 +257,136 @@ void CamReceiverDSRC::HandleRead(Ptr<Socket> socket) {
       }
     }
   }
+}
+
+// ==================== NR-V2X derived classes ====================
+NS_OBJECT_ENSURE_REGISTERED(CamSenderNR);
+
+void CamSenderNR::StartApplication() {
+  m_running = true;
+  if (!m_socket) {
+    m_socket = Socket::CreateSocket(GetNode(), UdpSocketFactory::GetTypeId());
+  }
+}
+
+void CamSenderNR::SendCam(uint32_t bytes, Ipv4Address dest_addr)
+{
+    // bytes = 1000;
+    std::cout << "CamSenderNR::SendCam\n";
+    NS_ASSERT(m_running);
+    NS_ASSERT(m_socket);
+    Ptr<MobilityModel> mobility = GetNode()->GetObject<MobilityModel>();
+    NS_ASSERT(mobility);
+
+    InetSocketAddress destination = InetSocketAddress(dest_addr, m_port); // dest port
+    // InetSocketAddress destination = InetSocketAddress(Ipv4Address("225.0.0.0"), m_port); // dest port
+    Ptr<Packet> packet = Create<Packet>(bytes);
+
+    Vector pos = mobility->GetPosition();
+    Vector vel = mobility->GetVelocity();
+    double speed = std::sqrt(vel.x * vel.x + vel.y * vel.y);
+    double heading = std::atan2(vel.y, vel.x) * 180.0 / M_PI;
+    CamHeader camHeader;
+    camHeader.SetVehicleId(m_vehicleId);
+    camHeader.SetPositionX(pos.x);
+    camHeader.SetPositionY(pos.y);
+    camHeader.SetSpeed(speed);
+    camHeader.SetHeading(heading);
+    camHeader.SetTimestamp(Simulator::Now().GetMilliSeconds());
+    packet->AddHeader(camHeader);
+
+    std::cout << "Addheader\n";
+
+    m_socket->SendTo(packet, 0, destination);
+
+    m_packetsSent++;
+    NS_LOG_INFO("Vehicle " << m_vehicleId << "(ip = " << m_addr << ") sent CAM at "
+                  << Simulator::Now().GetSeconds() << "s"
+                  << " Position: (" << pos.x << "," << pos.y << ")"
+                  << " Speed: " << speed << " Heading: " << heading << " size: " << packet->GetSize() << " bytes"
+                  << " Dest: " << dest_addr << ":" << m_port
+              );
+}
+TypeId CamSenderNR::GetTypeId() {
+    static TypeId tid = TypeId("ns3::CamSenderNR")
+                            .SetParent<CamSender>()
+                            .AddConstructor<CamSenderNR>();
+    return tid;
+}
+
+void CamSenderNR::StopApplication() {
+    CamSender::StopApplication();
+}
+
+
+// ==================== CamReceiverNR ====================
+NS_OBJECT_ENSURE_REGISTERED(CamReceiverNR);
+
+TypeId CamReceiverNR::GetTypeId() {
+    static TypeId tid = TypeId("ns3::CamReceiverNR")
+                            .SetParent<CamReceiver>()
+                            .AddConstructor<CamReceiverNR>();
+    return tid;
+}
+
+void CamReceiverNR::StartApplication() {
+  if (!m_socket) {
+    m_socket = Socket::CreateSocket(GetNode(), UdpSocketFactory::GetTypeId());
+    InetSocketAddress local = InetSocketAddress(Ipv4Address::GetAny(), m_port);
+    m_socket->Bind(local);
+    // NR-V2X多播的话，可以在这里加 JoinMulticastGroup，但ns-3里IPv4多播只要目标是多播地址，稍后会自动处理
+  }
+  m_socket->SetRecvCallback(MakeCallback(&CamReceiverNR::HandleRead, this));
+}
+
+void CamReceiverNR::StopApplication() {
+    if (m_socket) {
+        m_socket->SetRecvCallback(MakeNullCallback<void, Ptr<Socket>>());
+        m_socket->Close();
+    }
+}
+
+void CamReceiverNR::HandleRead(Ptr<Socket> socket) {
+    std::cout << "amReceiverNR::HandleRead\n";
+    Ptr<Packet> packet;
+    Address from;
+    while ((packet = socket->RecvFrom(from))) {
+        InetSocketAddress inetAddr = InetSocketAddress::ConvertFrom(from);
+        Ipv4Address src = inetAddr.GetIpv4();
+        uint16_t srcPort = inetAddr.GetPort();
+        CamHeader camHeader;
+        packet->RemoveHeader(camHeader);
+        auto packetSize = packet->GetSize();
+        NS_LOG_INFO("NR-V2X Node " << GetNode()->GetId() << " (Vehicle " << m_vehicleId << ")"
+                    << " received CAM from Vehicle "
+                    << camHeader.GetVehicleId() << " at "
+                    << Simulator::Now().GetSeconds() << "s"
+                    << " Position: (" << camHeader.GetPositionX() << ","
+                    << camHeader.GetPositionY() << ")"
+                    << " Speed: " << camHeader.GetSpeed()
+                    << " Heading: " << camHeader.GetHeading()
+                    << " Timestamp: " << camHeader.GetTimestamp() << " ms"
+                    << " Packet size: " << packetSize << " bytes"
+                    << " Src IP: " << src << ":" << srcPort);
+        m_packetsReceived++;
+        try {
+            if (m_replyFunction) {
+                std::string msg = R"({"type":"cam_received",)"
+                                  R"("sender_id":)" + std::to_string(camHeader.GetVehicleId()) +
+                                  R"(,"receiver_id":)" + std::to_string(m_vehicleId) +
+                                  R"(,"receive_timestamp":)" + std::to_string(Simulator::Now().GetMilliSeconds()) +
+                                  R"(,"send_timestamp":)" + std::to_string(camHeader.GetTimestamp()) +
+                                  R"(,"packet_size":)" + std::to_string(packetSize) +
+                                  R"(,"is_last_packet":)" + std::to_string(true) +
+                                  R"(})";
+                m_replyFunction(msg);
+            }
+        } catch (std::exception& e) {
+            NS_LOG_ERROR("CamReceiverNR::HandleRead m_replyFunction error: " << e.what());
+        } catch (...) {
+            NS_LOG_ERROR("CamReceiverNR::HandleRead unknown exception");
+        }
+    }
 }
 
 }
