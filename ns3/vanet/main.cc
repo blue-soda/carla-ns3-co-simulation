@@ -411,7 +411,7 @@ void InitializeVehicles_DSRC(uint32_t n_vehicles = 3){
   MobilityHelper mobility;
   Ptr<ListPositionAllocator> positionAlloc = CreateObject<ListPositionAllocator>();
   for (uint32_t i = 0; i < vehicles.GetN(); i++) {
-    positionAlloc->Add(Vector(0, 0, 0));
+    positionAlloc->Add(Vector(i * 10.0, 0, 0));
   }
 
   mobility.SetPositionAllocator(positionAlloc);
@@ -518,6 +518,7 @@ ComputePir(Ptr<const Packet> packet, const Address&)
     lastPktRxTime = Simulator::Now();
     pirCounter++;
 }
+
 
 Time slBearersActivationTime = Seconds(1.0);
 Time finalSlBearersActivationTime = slBearersActivationTime + Seconds(0.01);
@@ -671,8 +672,10 @@ void InitializeVehicles_NR_V2X_Mode2(uint32_t n_vehicles = 3)
     // NR Sidelink attribute of UE MAC, which are would be common for all the UEs
     nrHelper->SetUeMacTypeId(NrSlUeMac::GetTypeId());
     nrHelper->SetUeMacAttribute("EnableSensing", BooleanValue(false));
-    nrHelper->SetUeMacAttribute("T1", UintegerValue(2));
-    nrHelper->SetUeMacAttribute("T2", UintegerValue(33));
+    // nrHelper->SetUeMacAttribute("EnableSensing", BooleanValue(true));
+    nrHelper->SetUeMacAttribute("T1", UintegerValue(1));
+    // nrHelper->SetUeMacAttribute("T2", UintegerValue(33));
+    nrHelper->SetUeMacAttribute("T2", UintegerValue(1));
     nrHelper->SetUeMacAttribute("ActivePoolId", UintegerValue(0));
     
     uint8_t bwpIdForGbrMcptt = 0;
@@ -785,7 +788,8 @@ void InitializeVehicles_NR_V2X_Mode2(uint32_t n_vehicles = 3)
     ptrFactory->SetSlFreqResourcePscch(10); // PSCCH RBs
     ptrFactory->SetSlSubchannelSize(50);
     ptrFactory->SetSlMaxNumPerReserve(3);
-    std::list<uint16_t> resourceReservePeriodList = {0, 100}; // in ms
+    // std::list<uint16_t> resourceReservePeriodList = {0, 100}; // in ms
+    std::list<uint16_t> resourceReservePeriodList = {0, 10, 20, 50, 100}; 
     ptrFactory->SetSlResourceReservePeriodList(resourceReservePeriodList);
     // Once parameters are configured, we can create the pool
     LteRrcSap::SlResourcePoolNr pool = ptrFactory->CreatePool();
@@ -847,10 +851,11 @@ void InitializeVehicles_NR_V2X_Mode2(uint32_t n_vehicles = 3)
 
     // Configure the SlUeSelectedConfig IE
     LteRrcSap::SlUeSelectedConfig slUeSelectedPreConfig;
-    slUeSelectedPreConfig.slProbResourceKeep = 0;
+    // slUeSelectedPreConfig.slProbResourceKeep = 0;
+    slUeSelectedPreConfig.slProbResourceKeep = 0.8;
     // Configure the SlPsschTxParameters IE
     LteRrcSap::SlPsschTxParameters psschParams;
-    psschParams.slMaxTxTransNumPssch = 5;
+    psschParams.slMaxTxTransNumPssch = 1;
     // Configure the SlPsschTxConfigList IE
     LteRrcSap::SlPsschTxConfigList pscchTxConfigList;
     pscchTxConfigList.slPsschTxParameters[0] = psschParams;
@@ -908,11 +913,11 @@ void InitializeVehicles_NR_V2X_Mode2(uint32_t n_vehicles = 3)
     SidelinkInfo slInfo;
     slInfo.m_castType = SidelinkInfo::CastType::Unicast;
     slInfo.m_dstL2Id = 255;
-    slInfo.m_rri = MilliSeconds(100);
-    // slInfo.m_rri = MicroSeconds(10);
+    slInfo.m_rri = MilliSeconds(5);
+    // slInfo.m_rri = MilliSeconds(1);
     slInfo.m_pdb = Seconds(0);
     slInfo.m_harqEnabled = false;
-    slInfo.m_dynamic = false;
+    slInfo.m_dynamic = true;
 
     for(uint32_t i = 0; i < ueIpIface.GetN(); ++i)
     {
@@ -1023,6 +1028,27 @@ void InitializeVehicles_NR_V2X_Mode2(uint32_t n_vehicles = 3)
         // path.str("");
     }
 
+    Ptr<Node> node = vehicles.Get(0);
+    Ptr<Ipv4> ipv4 = node->GetObject<Ipv4>();
+
+    Ptr<Ipv4ListRouting> listRouting = DynamicCast<Ipv4ListRouting>(ipv4->GetRoutingProtocol());
+    if (listRouting)
+    {
+        for (uint32_t j = 0; j < listRouting->GetNRoutingProtocols(); ++j)
+        {
+            int16_t priority;
+            Ptr<Ipv4RoutingProtocol> subRouting = listRouting->GetRoutingProtocol(j, priority);
+            Ptr<Ipv4StaticRouting> staticRouting = DynamicCast<Ipv4StaticRouting>(subRouting);
+            if (staticRouting)
+            {
+                // ✅ 用 OutputStreamWrapper 封装 std::cout
+                Ptr<OutputStreamWrapper> stream = Create<OutputStreamWrapper>(&std::cout);
+                std::cout << "==== Routing table for Node " << node->GetId() << " ====" << std::endl;
+                staticRouting->PrintRoutingTable(stream);
+            }
+        }
+    }
+
     std::cout << "[INFO] NR-V2X Mode2 vehicles initialized: " << vehicles.GetN() << " UE nodes.\n";
 }
 
@@ -1030,6 +1056,8 @@ void InitializeVehicles_NR_V2X_Mode2(uint32_t n_vehicles = 3)
 int main(int argc, char *argv[]) {
 
   LogComponentEnable("CamApplication", LOG_ALL);
+  LogComponentEnable("NrSlUeMac", LOG_LEVEL_INFO);
+  LogComponentEnable("NrUeNetDevice", LOG_LEVEL_INFO);
 
   CommandLine cmd;
   cmd.AddValue("simTime", "Simulation time (s)", simTime);
