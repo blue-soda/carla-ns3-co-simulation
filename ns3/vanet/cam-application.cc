@@ -45,7 +45,7 @@ void CamSender::SetInterval(const Time& interval) { m_interval = interval; }
 void CamSender::SetBroadcastRadius(const uint16_t radius) { m_radius = radius; }
 bool CamSender::IsRunning() { return m_running; };
 void CamSender::ScheduleCam(uint32_t bytes, Ipv4Address dest_addr) { 
-  Simulator::Schedule(Seconds(0), [this, bytes, dest_addr] { SendCam(bytes, dest_addr); });
+  Simulator::Schedule(MilliSeconds(0), [this, bytes, dest_addr] { SendCam(bytes, dest_addr); });
 }
 void CamSender::SendCam(uint32_t bytes, Ipv4Address dest_addr) { std::cout << "[WARN] CamSender::SendCam should be overridden\n"; }
 void CamSender::StartApplication() { m_running = true; }

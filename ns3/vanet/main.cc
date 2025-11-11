@@ -566,7 +566,8 @@ void InitializeVehicles_NR_V2X_Mode2(uint32_t n_vehicles = 3)
     // will pass them inside the NR module.
     uint16_t numerologyBwpSl = 2;
     double centralFrequencyBandSl = 5.89e9; // band n47  TDD //Here band is analogous to channel
-    uint16_t bandwidthBandSl = 400;         // Multiple of 100 KHz; 400 = 40 MHz
+    // uint16_t bandwidthBandSl = 400;         // Multiple of 100 KHz; 400 = 40 MHz
+    uint16_t bandwidthBandSl = 1000;
     double txPower = 23;                    // dBm
 
     /*
@@ -617,7 +618,6 @@ void InitializeVehicles_NR_V2X_Mode2(uint32_t n_vehicles = 3)
     Config::SetDefault("ns3::ThreeGppChannelModel::UpdatePeriod", TimeValue(MilliSeconds(100)));
     nrHelper->SetChannelConditionModelAttribute("UpdatePeriod", TimeValue(MilliSeconds(0)));
     nrHelper->SetPathlossAttribute("ShadowingEnabled", BooleanValue(false));
-
     /*
      * Initialize channel and pathloss, plus other things inside bandSl. If needed,
      * the band configuration can be done manually, but we leave it for more
@@ -753,7 +753,8 @@ void InitializeVehicles_NR_V2X_Mode2(uint32_t n_vehicles = 3)
     nrSlHelper->SetNrSlSchedulerTypeId(NrSlUeMacSchedulerFixedMcs::GetTypeId());
     // nrSlHelper->SetNrSlSchedulerTypeId(ns3::NrSlUeMacSchedulerLCG::GetTypeId());
 
-    nrSlHelper->SetUeSlSchedulerAttribute("Mcs", UintegerValue(14));
+    // nrSlHelper->SetUeSlSchedulerAttribute("Mcs", UintegerValue(14));
+    nrSlHelper->SetUeSlSchedulerAttribute("Mcs", UintegerValue(20));
 
     /*
      * Very important method to configure UE protocol stack, i.e., it would
@@ -786,7 +787,7 @@ void InitializeVehicles_NR_V2X_Mode2(uint32_t n_vehicles = 3)
     ptrFactory->SetSlSensingWindow(100); // T0 in ms
     ptrFactory->SetSlSelectionWindow(5);
     ptrFactory->SetSlFreqResourcePscch(10); // PSCCH RBs
-    ptrFactory->SetSlSubchannelSize(50);
+    ptrFactory->SetSlSubchannelSize(10);
     ptrFactory->SetSlMaxNumPerReserve(3);
     // std::list<uint16_t> resourceReservePeriodList = {0, 100}; // in ms
     std::list<uint16_t> resourceReservePeriodList = {0, 10, 20, 50, 100}; 
@@ -873,6 +874,8 @@ void InitializeVehicles_NR_V2X_Mode2(uint32_t n_vehicles = 3)
     // Communicate the above pre-configuration to the NrSlHelper
     nrSlHelper->InstallNrSlPreConfiguration(ueVoiceNetDev, slPreConfigNr);
 
+    Config::SetDefault("ns3::LteRlcUm::MaxTxBufferSize", UintegerValue(100 * 1024 * 1024));
+
     /****************************** End SL Configuration ***********************/
 
     /*
@@ -916,7 +919,8 @@ void InitializeVehicles_NR_V2X_Mode2(uint32_t n_vehicles = 3)
     slInfo.m_rri = MilliSeconds(5);
     // slInfo.m_rri = MilliSeconds(1);
     slInfo.m_pdb = Seconds(0);
-    slInfo.m_harqEnabled = false;
+    // slInfo.m_harqEnabled = false;
+    slInfo.m_harqEnabled = true;
     slInfo.m_dynamic = true;
 
     for(uint32_t i = 0; i < ueIpIface.GetN(); ++i)
