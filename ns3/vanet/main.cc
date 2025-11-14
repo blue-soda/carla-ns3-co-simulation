@@ -16,8 +16,6 @@
 #include "ns3/nr-module.h"
 #include "ns3/point-to-point-module.h"
 #include "ns3/stats-module.h"
-#include "ns3/nr-mac-scheduler-ofdma-rr.h"
-#include "ns3/nr-sl-ue-mac-scheduler-lcg.h"
 
 #include "cam-application.h"
 #include "carla_vanet.h"
@@ -782,13 +780,15 @@ void InitializeVehicles_NR_V2X_Mode2(uint32_t n_vehicles = 3)
      * In the following, we show how one could change those default pool parameter
      * values as per the need.
      */
-    std::vector<std::bitset<1>> slBitmap = {1, 1, 1, 1, 1, 1, 0, 0, 0, 1, 1, 1};
+    // std::vector<std::bitset<1>> slBitmap = {1, 1, 1, 1, 1, 1, 0, 0, 0, 1, 1, 1};
+    std::vector<std::bitset<1>> slBitmap = {1,1,1,1,1,1,1,1,1,1,1,1}; // 12个时隙全可用
     ptrFactory->SetSlTimeResources(slBitmap);
     ptrFactory->SetSlSensingWindow(100); // T0 in ms
     ptrFactory->SetSlSelectionWindow(5);
     ptrFactory->SetSlFreqResourcePscch(10); // PSCCH RBs
     ptrFactory->SetSlSubchannelSize(10);
-    ptrFactory->SetSlMaxNumPerReserve(3);
+    // ptrFactory->SetSlMaxNumPerReserve(3);
+    ptrFactory->SetSlMaxNumPerReserve(1);
     // std::list<uint16_t> resourceReservePeriodList = {0, 100}; // in ms
     std::list<uint16_t> resourceReservePeriodList = {0, 10, 20, 50, 100}; 
     ptrFactory->SetSlResourceReservePeriodList(resourceReservePeriodList);
@@ -844,7 +844,9 @@ void InitializeVehicles_NR_V2X_Mode2(uint32_t n_vehicles = 3)
 
     // Configure the TddUlDlConfigCommon IE
     LteRrcSap::TddUlDlConfigCommon tddUlDlConfigCommon;
-    tddUlDlConfigCommon.tddPattern = "DL|DL|DL|F|UL|UL|UL|UL|UL|UL|";
+    // tddUlDlConfigCommon.tddPattern = "DL|DL|DL|F|UL|UL|UL|UL|UL|UL|";
+    tddUlDlConfigCommon.tddPattern = "UL|UL|UL|UL|UL|UL|UL|UL|UL|UL|UL|UL|";
+    // tddUlDlConfigCommon.tddPattern = "F|F|F|F|F|F|F|F|F|F|F|F|";
 
     // Configure the SlPreconfigGeneralNr IE
     LteRrcSap::SlPreconfigGeneralNr slPreconfigGeneralNr;
@@ -919,8 +921,7 @@ void InitializeVehicles_NR_V2X_Mode2(uint32_t n_vehicles = 3)
     slInfo.m_rri = MilliSeconds(5);
     // slInfo.m_rri = MilliSeconds(1);
     slInfo.m_pdb = Seconds(0);
-    // slInfo.m_harqEnabled = false;
-    slInfo.m_harqEnabled = true;
+    slInfo.m_harqEnabled = false;
     slInfo.m_dynamic = true;
 
     for(uint32_t i = 0; i < ueIpIface.GetN(); ++i)
@@ -1060,8 +1061,8 @@ void InitializeVehicles_NR_V2X_Mode2(uint32_t n_vehicles = 3)
 int main(int argc, char *argv[]) {
 
   LogComponentEnable("CamApplication", LOG_ALL);
-  LogComponentEnable("NrSlUeMac", LOG_LEVEL_INFO);
-  LogComponentEnable("NrUeNetDevice", LOG_LEVEL_INFO);
+  // LogComponentEnable("NrSlUeMac", LOG_LEVEL_INFO);
+  // LogComponentEnable("NrUeNetDevice", LOG_LEVEL_INFO);
 
   CommandLine cmd;
   cmd.AddValue("simTime", "Simulation time (s)", simTime);
