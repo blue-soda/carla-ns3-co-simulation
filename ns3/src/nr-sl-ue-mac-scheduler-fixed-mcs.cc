@@ -1673,6 +1673,7 @@ NrSlUeMacSchedulerFixedMcs::CalculateTbSize(Ptr<const NrAmc> nrAmc,
                                   slRank,
                                   subChannelSize * availableSubChannels * symbolsPerSlot);
 }
+
 bool
 NrSlUeMacSchedulerFixedMcs::DoNrSlAllocation(
     const std::list<SlResourceInfo>& candResources,

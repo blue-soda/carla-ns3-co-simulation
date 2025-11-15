@@ -350,7 +350,7 @@ class NrSlUeMacSchedulerFixedMcs : public NrSlUeMacScheduler
     Ptr<UniformRandomVariable> m_grantSelectionUniformVariable; //!< Used for grant selection
     Ptr<UniformRandomVariable> m_destinationUniformVariable; //!< Used for destination randomization
 
-  private:
+//   private:
     /**
      * \brief Create destination info
      *

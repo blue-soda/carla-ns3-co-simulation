@@ -748,8 +748,8 @@ void InitializeVehicles_NR_V2X_Mode2(uint32_t n_vehicles = 3)
      * In this example we use NrSlUeMacSchedulerFixedMcs scheduler, which uses
      * a fixed MCS value
      */
-    nrSlHelper->SetNrSlSchedulerTypeId(NrSlUeMacSchedulerFixedMcs::GetTypeId());
-    // nrSlHelper->SetNrSlSchedulerTypeId(ns3::NrSlUeMacSchedulerLCG::GetTypeId());
+    // nrSlHelper->SetNrSlSchedulerTypeId(NrSlUeMacSchedulerFixedMcs::GetTypeId());
+    nrSlHelper->SetNrSlSchedulerTypeId(ns3::NrSlUeMacSchedulerCluster::GetTypeId());
 
     // nrSlHelper->SetUeSlSchedulerAttribute("Mcs", UintegerValue(14));
     nrSlHelper->SetUeSlSchedulerAttribute("Mcs", UintegerValue(20));

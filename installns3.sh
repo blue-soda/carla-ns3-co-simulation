@@ -53,7 +53,8 @@ cd ../../..
 pwd
 
 ln -sf $(pwd)/ns3/vanet/ $(pwd)/ns-3-dev/scratch/
-cp $(pwd)/ns3/src/*.h $(pwd)/ns-3-dev/contrib/nr/model/
+ln -sf $(pwd)/ns3/src/* $(pwd)/ns-3-dev/contrib/nr/model/
+ln -sf $(pwd)/ns3/cmake/* $(pwd)/ns-3-dev/contrib/nr/
 
 echo "[INFO] copied bridge code to ns-3"
 
