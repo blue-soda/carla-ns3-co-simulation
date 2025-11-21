@@ -38,10 +38,13 @@ NodeContainer vehicles;
 uint32_t nVehicles = 0;
 double simTime = 10.0;
 double camInterval = 0.1;
+Time slBearersActivationTime = Seconds(1.0);
+Time finalSlBearersActivationTime = slBearersActivationTime + Seconds(0.01);
 
 std::vector<Ptr<CamSender>> senders;
 std::vector<Ptr<CamReceiver>> receivers;
 std::vector<Ipv4Address> vehicleIps;
+std::vector<uint32_t> vehicleL2Ids;
 
 std::map<int, int> indexToCarlaId;
 std::map<int, int> carlaIdToIndex;
@@ -50,16 +53,20 @@ std::atomic indexBindToCarlaId(false);
 std::map<int, Vector> latestPositions;
 std::map<int, Vector> latestVelocities;
 std::map<int, std::vector<int>> latestRequests;
+std::unordered_map<int, TransferRequestSubChannel> latestRequestsSubChannel;
+
 std::mutex dataMutex;
 std::atomic firstDataReceived(false);
 bool running = true;
 
 int send_to_carla_fd = -1;
 
+int totalSubChannel = 0;
+
 void ProcessData_VehiclePosition(const json& vehicleArray) {
   for (const auto &vehicle : vehicleArray) {
     int id = vehicle["carla_id"];
-    if(!indexBindToCarlaId){
+    if(!indexBindToCarlaId) {
       int index = vehicle["id"];
       indexToCarlaId[index] = id;
       carlaIdToIndex[id] = index;
@@ -78,7 +85,7 @@ void ProcessData_VehiclePosition(const json& vehicleArray) {
     latestPositions[id] = pos;
     latestVelocities[id] = vel;
 
-    // if(!indexBindToCarlaId){
+    // if(!indexBindToCarlaId) {
     //   const double heading = vehicle.value("heading", 0.0);
     //   const double speed   = vehicle.value("speed", 0.0);
 
@@ -91,7 +98,8 @@ void ProcessData_VehiclePosition(const json& vehicleArray) {
   indexBindToCarlaId = true;
 }
 
-void ProcessData_TransferRequests(const json &requests){
+void ProcessData_TransferRequests(const json &requests) {
+  bool contains_rb = requests.contains("sc_start") && requests.contains("sc_num");
   for (const auto &req : requests) {
     if (!req.contains("source") || !req.contains("target") || !req.contains("size")) {
       std::cerr << "[WARN] transfer request missing fields, skipping\n";
@@ -100,7 +108,14 @@ void ProcessData_TransferRequests(const json &requests){
     int source = req["source"].get<int>();
     int target = req["target"].get<int>();
     int size = req["size"].get<int>();
-    latestRequests[source] = {size, target};
+    if(contains_rb) {
+      uint8_t sc_start = req["sc_start"].get<uint8_t>();
+      uint8_t sc_num = req["sc_num"].get<uint8_t>();
+      double tx_power = req.contains("tx_power") ? req["tx_power"].get<double>() : 0.1; // 默认 0.1W=20dBm
+      latestRequestsSubChannel[source] = {(uint32_t)size, target, sc_start, sc_num, tx_power};
+    } else {
+      latestRequests[source] = {size, target};
+    }
 
     if(!carlaIdToIndex.count(source) || !carlaIdToIndex.count(target)) {
       std::cerr << "[WARN] (" << source << ", " << target << ") skipped during ProcessData_TransferRequests\n";
@@ -110,25 +125,32 @@ void ProcessData_TransferRequests(const json &requests){
     std::cout << "[INFO] Transfer request: " << source << " -> " << target
               << ", size = " << size << " bytes\n";
     
-    if(indexBindToCarlaId){
+    if(indexBindToCarlaId) {
       int source_index = carlaIdToIndex[source];
       int target_index = carlaIdToIndex[target];
-      if(source_index >= (int)senders.size() || target_index >= (int)senders.size()){
+      if(source_index >= (int)senders.size() || target_index >= (int)senders.size()) {
         std::cerr << "[ERR] index out range during ProcessData_TransferRequests, source_index = " 
           << source_index << " id = " << source << ", or target_index = " << target_index << " id = " << target << "\n";
         continue;
       }
-      if(senders[source_index]->IsRunning()){
-        std::cout << "[INFO] sender index: " << source_index << " id: " << source << " sending " << size << " bytes\n";
-        senders[source_index]->ScheduleCam((uint32_t)size, vehicleIps[target_index]);
+      if(senders[source_index]->IsRunning()) {
+        if(contains_rb) {
+          TransferRequestSubChannel sc_req = latestRequestsSubChannel[source];
+          std::cout << "[INFO] sender index: " << source_index << " id: " << source << " sending " << sc_req.size << " bytes to " << target_index << " id: " << target << "subChannel_start: " << (uint32_t)sc_req.start << " num: " << (uint32_t)sc_req.num << " tx_power: " << sc_req.tx_power << " W\n";
+          CamSenderNR *sender_nr = GetPointer(DynamicCast<CamSenderNR>(senders[source_index]));
+          sender_nr->ScheduleCam((uint32_t)sc_req.size, vehicleIps[target_index], sc_req.start, sc_req.num, sc_req.tx_power, vehicleL2Ids[target_index]);
+        } else {
+          std::cout << "[INFO] sender index: " << source_index << " id: " << source << " sending " << size << " bytes\n";
+          // 对于没有指定子信道的情况，仍然使用原有接口
+        }
       }
     }
   }
 }
 
-void ProcessData_VehiclesNum(const int &num){
+void ProcessData_VehiclesNum(const int &num) {
   uint32_t unum = (uint32_t)num;
-  if(nVehicles < unum){
+  if(nVehicles < unum) {
     std::cout << "[INFO] Vehicles number changed: " << nVehicles << " -> " << unum << "\n";
     InitializeVehicles(unum);
     indexBindToCarlaId = false;
@@ -152,7 +174,7 @@ void ProcessJsonData(const std::string &data) {
         ProcessData_TransferRequests(msg["transfer_requests"]);
       } 
 
-      else if (type == "vehicles_position"){
+      else if (type == "vehicles_position") {
         if (!msg.contains("vehicles_position") || !msg["vehicles_position"].is_array()) {
           std::cerr << "[ERR] vehicles_position message missing 'vehicles_position' array\n";
           return;
@@ -160,7 +182,7 @@ void ProcessJsonData(const std::string &data) {
         ProcessData_VehiclePosition(msg["vehicles_position"]);
       } 
 
-      else if (type == "vehicles_num"){
+      else if (type == "vehicles_num") {
         if (!msg.contains("vehicles_num")) {
           std::cerr << "[ERR] vehicles_num message missing 'vehicles_num'\n";
           return;
@@ -255,7 +277,6 @@ void SocketReceiverServerThread() {
 
     buffer[bytes] = '\0';
 
-    // ProcessJsonData(std::string(buffer));
     receive_buffer_string = std::string(buffer);
     ProcessReceivedData(receive_buffer_string);
   }
@@ -273,7 +294,7 @@ void UpdateVehiclePositions() {
         continue;
       }
       uint32_t index = (uint32_t)carlaIdToIndex[id];
-      if (index >= vehicles.GetN()){ 
+      if (index >= vehicles.GetN()) { 
         std::cerr << "[ERR] (" << id << "-> "<< index << ") skipped during UpdateVehiclePositions\n";
         continue;
       }
@@ -288,7 +309,7 @@ void UpdateVehiclePositions() {
       Simulator::Schedule(Seconds(0.05), &UpdateVehiclePositions);
     }
   } 
-  catch(std::exception &e){ std::cerr << "[ERR] UpdateVehiclePositions error: " << e.what() << "\n"; }
+  catch(std::exception &e) { std::cerr << "[ERR] UpdateVehiclePositions error: " << e.what() << "\n"; }
   catch (...) { std::cerr << "[ERR] UpdateVehiclePositions: unknown exception caught\n"; }
 
 }
@@ -300,9 +321,9 @@ void SendSimulationEndSignal() {
 
 void SendMsgToCarla(const std::string &msg) {
   std::cout << "[INFO] SendMsgToCarla: " << msg << ", send_to_carla_fd: " << send_to_carla_fd << "\n";
-  if(send_to_carla_fd < 0){ //if not connected, try to connect for once
+  if(send_to_carla_fd < 0) { //if not connected, try to connect for once
     SocketSenderServerConnect();
-    if(send_to_carla_fd < 0){
+    if(send_to_carla_fd < 0) {
       std::cerr << "[ERR] send_to_carla_fd is not connected\n";
       return;
     }
@@ -344,22 +365,39 @@ void SocketSenderServerDisconnect() {
 }
 
 
-void PrintRoutingTable (Ptr<Node> node)
-{
-    Ptr<Ipv4> ipv4 = node->GetObject<Ipv4>();
-    Ipv4StaticRoutingHelper helper;
-    Ptr<Ipv4StaticRouting> routing = helper.GetStaticRouting(ipv4);
-    uint32_t nRoutes = routing->GetNRoutes();
-    std::cout << "Routing table of node " << node->GetId() << ":\n";
-    for (uint32_t i = 0; i < nRoutes; i++)
-    {
-        Ipv4RoutingTableEntry route = routing->GetRoute(i);
-        std::cout << route.GetDest() << "\t"
-                  << route.GetGateway() << "\t"
-                  << route.GetDestNetworkMask() << "\t"
-                  << route.GetInterface() << "\n";
-    }
+int main(int argc, char *argv[]) {
+
+  LogComponentEnable("CamApplication", LOG_ALL);
+  // LogComponentEnable("NrSlUeMac", LOG_LEVEL_INFO);
+  // LogComponentEnable("NrUeNetDevice", LOG_LEVEL_INFO);
+
+  CommandLine cmd;
+  cmd.AddValue("simTime", "Simulation time (s)", simTime);
+  cmd.AddValue("camInterval", "CAM interval (s)", camInterval);
+  cmd.Parse(argc, argv);
+
+  Simulator::SetImplementation(CreateObject<RealtimeSimulatorImpl>());
+  std::thread serverReceiverThread(SocketReceiverServerThread);
+  
+  std::cout << "[INFO] Waiting for first Carla data...\n";
+  while (!firstDataReceived) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+  }
+  SocketSenderServerConnect();
+
+  std::cout << "[INFO] Starting simulation!\n";
+  Simulator::Schedule(Seconds(0.1), &UpdateVehiclePositions);
+  Simulator::Stop(Seconds(simTime));
+  Simulator::Run();
+
+  running = false;
+  serverReceiverThread.join();
+  SendSimulationEndSignal();
+  SocketSenderServerDisconnect();
+  Simulator::Destroy();
+  return 0;
 }
+
 
 void InitializeVehicles_DSRC(uint32_t n_vehicles = 3){
   if(nVehicles >= n_vehicles) return;
@@ -457,77 +495,22 @@ void InitializeVehicles_DSRC(uint32_t n_vehicles = 3){
   std::cout << "[INFO] DSRC vehiclesInitialized with " << vehicles.GetN() << " nodes.\n";
 }
 
-
-/*
- * Global variables to count TX/RX packets and bytes.
- */
-
-uint32_t rxByteCounter = 0; //!< Global variable to count RX bytes
-uint32_t txByteCounter = 0; //!< Global variable to count TX bytes
-uint32_t rxPktCounter = 0;  //!< Global variable to count RX packets
-uint32_t txPktCounter = 0;  //!< Global variable to count TX packets
-
-/**
- * \brief Method to listen the packet sink application trace Rx.
- * \param packet The packet
- */
-void
-ReceivePacket(Ptr<const Packet> packet, const Address&)
+void PrintRoutingTable (Ptr<Node> node)
 {
-    rxByteCounter += packet->GetSize();
-    rxPktCounter++;
-}
-
-/**
- * \brief Method to listen the transmitting application trace Tx.
- * \param packet The packet
- */
-void
-TransmitPacket(Ptr<const Packet> packet)
-{
-    txByteCounter += packet->GetSize();
-    txPktCounter++;
-}
-
-
-/*
- * Global variable used to compute PIR
- */
-uint64_t pirCounter =
-    0; //!< counter to count how many time we computed the PIR. It is used to compute average PIR
-Time lastPktRxTime; //!< Global variable to store the RX time of a packet
-Time pir;           //!< Global variable to store PIR value
-
-/**
- * \brief This method listens to the packet sink application trace Rx.
- * \param packet The packet
- * \param from The address of the transmitter
- */
-void
-ComputePir(Ptr<const Packet> packet, const Address&)
-{
-    if (pirCounter == 0 && lastPktRxTime.GetSeconds() == 0.0)
+    Ptr<Ipv4> ipv4 = node->GetObject<Ipv4>();
+    Ipv4StaticRoutingHelper helper;
+    Ptr<Ipv4StaticRouting> routing = helper.GetStaticRouting(ipv4);
+    uint32_t nRoutes = routing->GetNRoutes();
+    std::cout << "Routing table of node " << node->GetId() << ":\n";
+    for (uint32_t i = 0; i < nRoutes; i++)
     {
-        // this the first packet, just store the time and get out
-        lastPktRxTime = Simulator::Now();
-        return;
+        Ipv4RoutingTableEntry route = routing->GetRoute(i);
+        std::cout << route.GetDest() << "\t"
+                  << route.GetGateway() << "\t"
+                  << route.GetDestNetworkMask() << "\t"
+                  << route.GetInterface() << "\n";
     }
-    pir = pir + (Simulator::Now() - lastPktRxTime);
-    lastPktRxTime = Simulator::Now();
-    pirCounter++;
 }
-
-
-Time slBearersActivationTime = Seconds(1.0);
-Time finalSlBearersActivationTime = slBearersActivationTime + Seconds(0.01);
-Time finalSimTime = Seconds(simTime) + finalSlBearersActivationTime;
-double dataRateBe = 108 * 1024;  //108Mbps
-uint32_t udpPacketSizeBe = 200;
-std::string dataRateBeString = std::to_string(dataRateBe) + "kb/s";
-double realAppStart =
-    finalSlBearersActivationTime.GetSeconds() +
-    ((double)udpPacketSizeBe * 8.0 / (DataRate(dataRateBeString).GetBitRate()));
-double appStopTime = (finalSimTime).GetSeconds();
 
 void InitializeVehicles_NR_V2X_Mode2(uint32_t n_vehicles = 3)
 {
@@ -539,6 +522,7 @@ void InitializeVehicles_NR_V2X_Mode2(uint32_t n_vehicles = 3)
     senders.clear();
     receivers.clear();
     vehicleIps.clear();
+    vehicleL2Ids = std::vector<uint32_t>(n_vehicles, 0);
 
     /*
      * Assign mobility to the UEs.
@@ -559,6 +543,11 @@ void InitializeVehicles_NR_V2X_Mode2(uint32_t n_vehicles = 3)
     for (uint32_t i = 0; i < vehicles.GetN(); i++) {
         vehicles.Get(i)->GetObject<ConstantVelocityMobilityModel>()->SetVelocity(Vector(0, 0, 0));
     }
+    
+    // 提前安装网络栈，确保TrafficControlLayer在NR设备安装前正确初始化
+    std::cout << "[INFO] Installing Internet Stack\n";
+    InternetStackHelper internet;
+    internet.Install(vehicles);
 
     // NR parameters. We will take the input from the command line, and then we
     // will pass them inside the NR module.
@@ -567,7 +556,8 @@ void InitializeVehicles_NR_V2X_Mode2(uint32_t n_vehicles = 3)
     // uint16_t bandwidthBandSl = 400;         // Multiple of 100 KHz; 400 = 40 MHz
     uint16_t bandwidthBandSl = 1000;
     double txPower = 23;                    // dBm
-
+    uint16_t SlSubchannelSize = 10;
+    totalSubChannel = ((bandwidthBandSl * 100) / 180) / SlSubchannelSize;
     /*
      * Setup the NR module. We create the various helpers needed for the
      * NR simulation:
@@ -748,8 +738,8 @@ void InitializeVehicles_NR_V2X_Mode2(uint32_t n_vehicles = 3)
      * In this example we use NrSlUeMacSchedulerFixedMcs scheduler, which uses
      * a fixed MCS value
      */
-    // nrSlHelper->SetNrSlSchedulerTypeId(NrSlUeMacSchedulerFixedMcs::GetTypeId());
-    nrSlHelper->SetNrSlSchedulerTypeId(ns3::NrSlUeMacSchedulerCluster::GetTypeId());
+    nrSlHelper->SetNrSlSchedulerTypeId(NrSlUeMacSchedulerFixedMcs::GetTypeId());
+    // nrSlHelper->SetNrSlSchedulerTypeId(ns3::NrSlUeMacSchedulerCluster::GetTypeId());
 
     // nrSlHelper->SetUeSlSchedulerAttribute("Mcs", UintegerValue(14));
     nrSlHelper->SetUeSlSchedulerAttribute("Mcs", UintegerValue(20));
@@ -786,7 +776,7 @@ void InitializeVehicles_NR_V2X_Mode2(uint32_t n_vehicles = 3)
     ptrFactory->SetSlSensingWindow(100); // T0 in ms
     ptrFactory->SetSlSelectionWindow(5);
     ptrFactory->SetSlFreqResourcePscch(10); // PSCCH RBs
-    ptrFactory->SetSlSubchannelSize(10);
+    ptrFactory->SetSlSubchannelSize(SlSubchannelSize);
     // ptrFactory->SetSlMaxNumPerReserve(3);
     ptrFactory->SetSlMaxNumPerReserve(1);
     // std::list<uint16_t> resourceReservePeriodList = {0, 100}; // in ms
@@ -886,17 +876,16 @@ void InitializeVehicles_NR_V2X_Mode2(uint32_t n_vehicles = 3)
     int64_t stream = 1;
     stream += nrHelper->AssignStreams(ueVoiceNetDev, stream);
     stream += nrSlHelper->AssignStreams(ueVoiceNetDev, stream);
-
+    
+    // 网络栈已提前安装，这里只需要分配流
+    stream += internet.AssignStreams(vehicles, stream);
+    
     /* 
      * Configure the IP stack, and activate NR Sidelink bearer (s) as per the
      * configured time.
      *
      * This example supports IPV4 and IPV6
      */
-
-    InternetStackHelper internet;
-    internet.Install(vehicles);
-    stream += internet.AssignStreams(vehicles, stream);
     // Ipv4Address groupAddress4("225.0.0.0"); // use multicast address as destination
 
     Ipv4InterfaceContainer ueIpIface;
@@ -929,7 +918,9 @@ void InitializeVehicles_NR_V2X_Mode2(uint32_t n_vehicles = 3)
       NetDeviceContainer receiver;
       receiver.Add(ueVoiceNetDev.Get(i));
       Ipv4Address destIp = ueIpIface.GetAddress(i);
-      slInfo.m_dstL2Id = DynamicCast<NrUeNetDevice>(ueVoiceNetDev.Get(i))->GetMac(0)->GetObject<NrSlUeMac>()->GetSrcL2Id();
+      uint32_t dstL2Id = DynamicCast<NrUeNetDevice>(ueVoiceNetDev.Get(i))->GetMac(0)->GetObject<NrSlUeMac>()->GetSrcL2Id();
+      slInfo.m_dstL2Id = dstL2Id;
+      vehicleL2Ids[i] = dstL2Id;
       Ptr<LteSlTft> tftUnicastReceiver = Create<LteSlTft>(
         LteSlTft::Direction::RECEIVE,
         destIp, 
@@ -952,22 +943,7 @@ void InitializeVehicles_NR_V2X_Mode2(uint32_t n_vehicles = 3)
         // nrSlHelper->ActivateNrSlBearer(finalSlBearersActivationTime, ueVoiceNetDev, tftUnicast);
       }
     }
-    // slInfo.m_dstL2Id = 255;
-    // Ptr<LteSlTft> tft = Create<LteSlTft>(LteSlTft::Direction::BIDIRECTIONAL, groupAddress4, slInfo);
-    // // Set Sidelink bearers
-    // nrSlHelper->ActivateNrSlBearer(finalSlBearersActivationTime, ueVoiceNetDev, tft);
 
-    // // OnOffHelper sidelinkClient = OnOffHelper("ns3::UdpSocketFactory", remoteAddress);
-    // UdpClientHelper sidelinkClient(remoteAddress, port);
-    // sidelinkClient.SetAttribute("MaxPackets", UintegerValue(5)); 
-    // sidelinkClient.SetAttribute("Interval", TimeValue(Seconds(2.0))); // 立即发送 (启动后)
-    // sidelinkClient.SetAttribute("PacketSize", UintegerValue(5000)); // 设置包大小
-    // // sidelinkClient.SetAttribute("EnableSeqTsSizeHeader", BooleanValue(true));
-    // // std::cout << "Data rate " << DataRate(dataRateBeString) << std::endl;
-    // // sidelinkClient.SetConstantRate(DataRate(dataRateBeString), udpPacketSizeBe);
-
-    // PacketSinkHelper sidelinkSink("ns3::UdpSocketFactory", localAddress);
-    // sidelinkSink.SetAttribute("EnableSeqTsSizeHeader", BooleanValue(true));
     // // Install Application
     std::cout << "[INFO] Installing Application\n";    
     for (uint32_t i = 0; i < vehicles.GetN(); i++) {
@@ -975,26 +951,11 @@ void InitializeVehicles_NR_V2X_Mode2(uint32_t n_vehicles = 3)
         std::cout << "[INFO] Vehicle " << i << " IP address: " << ip << "\n";
         vehicleIps.push_back(ip);
 
-        // ApplicationContainer clientApps = sidelinkClient.Install(vehicles.Get(i));
-        // clientApps.Start(finalSlBearersActivationTime);
-        // clientApps.Stop(finalSimTime);
-
-        // ApplicationContainer serverApps = sidelinkSink.Install(vehicles.Get(i));;
-        // serverApps.Start(finalSlBearersActivationTime);
 
         Ptr<CamSenderNR> sender = CreateObject<CamSenderNR>();
         sender->SetVehicleId(i+1);
         sender->SetInterval(Seconds(camInterval));
         sender->SetIp(ip);
-
-        // sender->SetClientApp(clientApps);
-            // Output app start, stop and duration
-
-        std::cout << "App start time " << realAppStart << " sec" << std::endl;
-        std::cout << "App stop time " << appStopTime << " sec" << std::endl;
-
-        sender->SetNrSlHelper(nrSlHelper);
-        // sender->SetBroadcastAddress(groupAddress4, port);
         vehicles.Get(i)->AddApplication(sender);
         sender->SetStartTime(slBearersActivationTime);
         sender->SetStopTime(Seconds(simTime));
@@ -1007,30 +968,10 @@ void InitializeVehicles_NR_V2X_Mode2(uint32_t n_vehicles = 3)
         vehicles.Get(i)->AddApplication(receiver);
         receiver->SetStartTime(slBearersActivationTime);
         receiver->SetStopTime(Seconds(simTime));
-        // receiver->SetReplyFunction([](const std::string& msg) {
-        //   return SendMsgToCarla(msg);
-        // });
         receiver->SetReplyFunction([i](const std::string& msg) {
           Simulator::Schedule(MilliSeconds(i), [msg] { SendMsgToCarla(msg); });
         });
         receivers.push_back(receiver);
-
-        // // Trace receptions; use the following to be robust to node ID changes
-        // std::ostringstream path;
-        // path << "/NodeList/" << vehicles.Get(i)->GetId()
-        //     << "/ApplicationList/1/$ns3::PacketSink/Rx";
-        // Config::ConnectWithoutContext(path.str(), MakeCallback(&ReceivePacket));
-        // path.str("");
-
-        // path << "/NodeList/" << vehicles.Get(i)->GetId()
-        //     << "/ApplicationList/1/$ns3::PacketSink/Rx";
-        // Config::ConnectWithoutContext(path.str(), MakeCallback(&ComputePir));
-        // path.str("");
-
-        // path << "/NodeList/" << vehicles.Get(i)->GetId()
-        //     << "/ApplicationList/0/$ns3::UdpClient/Tx";
-        // Config::ConnectWithoutContext(path.str(), MakeCallback(&TransmitPacket));
-        // path.str("");
     }
 
     Ptr<Node> node = vehicles.Get(0);
@@ -1046,7 +987,6 @@ void InitializeVehicles_NR_V2X_Mode2(uint32_t n_vehicles = 3)
             Ptr<Ipv4StaticRouting> staticRouting = DynamicCast<Ipv4StaticRouting>(subRouting);
             if (staticRouting)
             {
-                // ✅ 用 OutputStreamWrapper 封装 std::cout
                 Ptr<OutputStreamWrapper> stream = Create<OutputStreamWrapper>(&std::cout);
                 std::cout << "==== Routing table for Node " << node->GetId() << " ====" << std::endl;
                 staticRouting->PrintRoutingTable(stream);
@@ -1055,53 +995,4 @@ void InitializeVehicles_NR_V2X_Mode2(uint32_t n_vehicles = 3)
     }
 
     std::cout << "[INFO] NR-V2X Mode2 vehicles initialized: " << vehicles.GetN() << " UE nodes.\n";
-}
-
-
-int main(int argc, char *argv[]) {
-
-  LogComponentEnable("CamApplication", LOG_ALL);
-  // LogComponentEnable("NrSlUeMac", LOG_LEVEL_INFO);
-  // LogComponentEnable("NrUeNetDevice", LOG_LEVEL_INFO);
-
-  CommandLine cmd;
-  cmd.AddValue("simTime", "Simulation time (s)", simTime);
-  cmd.AddValue("camInterval", "CAM interval (s)", camInterval);
-  cmd.Parse(argc, argv);
-
-  Simulator::SetImplementation(CreateObject<RealtimeSimulatorImpl>());
-  std::thread serverReceiverThread(SocketReceiverServerThread);
-  
-  std::cout << "[INFO] Waiting for first Carla data...\n";
-  while (!firstDataReceived) {
-    std::this_thread::sleep_for(std::chrono::milliseconds(100));
-  }
-  SocketSenderServerConnect();
-
-  std::cout << "[INFO] Starting simulation!\n";
-  Simulator::Schedule(Seconds(0.1), &UpdateVehiclePositions);
-  Simulator::Stop(Seconds(simTime));
-  Simulator::Run();
-
-  running = false;
-  serverReceiverThread.join();
-  SendSimulationEndSignal();
-  SocketSenderServerDisconnect();
-  Simulator::Destroy();
-
-  std::cout << "[INFO] Simulation finished.\n";
-
-  std::cout << "Total Tx bits = " << txByteCounter * 8 << std::endl;
-  std::cout << "Total Tx packets = " << txPktCounter << std::endl;
-
-  std::cout << "Total Rx bits = " << rxByteCounter * 8 << std::endl;
-  std::cout << "Total Rx packets = " << rxPktCounter << std::endl;
-
-  std::cout << "Avrg thput = "
-            << (rxByteCounter * 8) / (finalSimTime - Seconds(realAppStart)).GetSeconds() / 1000.0
-            << " kbps" << std::endl;
-
-  std::cout << "Average Packet Inter-Reception (PIR) " << pir.GetSeconds() / pirCounter << " sec"
-            << std::endl;
-  return 0;
 }

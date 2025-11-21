@@ -7,9 +7,10 @@
 #include <ns3/log.h>
 #include <ns3/pointer.h>
 #include <ns3/uinteger.h>
+#include <ns3/double.h>
 
-#include <optional>
-#include <queue>
+#include <algorithm>
+#include <cmath>
 
 namespace ns3
 {
@@ -17,125 +18,204 @@ namespace ns3
 NS_LOG_COMPONENT_DEFINE("NrSlUeMacSchedulerCluster");
 NS_OBJECT_ENSURE_REGISTERED(NrSlUeMacSchedulerCluster);
 // 注册调度器TypeID
-TypeId NrSlUeMacSchedulerCluster::GetTypeId(void)
+TypeId
+NrSlUeMacSchedulerCluster::GetTypeId(void)
 {
     static TypeId tid = TypeId("ns3::NrSlUeMacSchedulerCluster")
         .SetParent<NrSlUeMacSchedulerFixedMcs>()
         .AddConstructor<NrSlUeMacSchedulerCluster>()
-        .SetGroupName("nr")
-        // 可添加自定义属性（如配置RB起始索引和数量）
-        // .AddAttribute("Mcs",
-        //                 "The fixed value of the MCS used by this scheduler",
-        //                 UintegerValue(14),
-        //                 MakeUintegerAccessor(&NrSlUeMacSchedulerCluster::m_mcs),
-        //                 MakeUintegerChecker<uint8_t>())
-        // .AddAttribute("PriorityToSps",
-        //                 "Flag to give scheduling priority to logical channels that are "
-        //                 "configured with SPS in case of priority tie",
-        //                 BooleanValue(true),
-        //                 MakeBooleanAccessor(&NrSlUeMacSchedulerCluster::m_prioToSps),
-        //                 MakeBooleanChecker())
-        // .AddAttribute("WholeSlotExclusion",
-        //                 "Whether to exclude use of candidate resources when other resources "
-        //                 "in same slot are sensed",
-        //                 BooleanValue(false),
-        //                 MakeBooleanAccessor(&NrSlUeMacSchedulerCluster::m_wholeSlotExclusion),
-        //                 MakeBooleanChecker())
-        // .AddAttribute("AllowMultipleDestinationsPerSlot",
-        //                 "Allow scheduling of multiple destinations in same slot",
-        //                 BooleanValue(false),
-        //                 MakeBooleanAccessor(
-        //                     &NrSlUeMacSchedulerCluster::m_allowMultipleDestinationsPerSlot),
-        //                 MakeBooleanChecker())
-        .AddAttribute("CustomRbStart", "Custom RB start index",
-                      UintegerValue(5),
-                      MakeUintegerAccessor(&NrSlUeMacSchedulerCluster::m_customRbStart),
-                      MakeUintegerChecker<uint16_t>())
-        .AddAttribute("CustomRbNum", "Custom RB number",
+        .AddAttribute("NumChannels", "Number of subchannels (K)",
                       UintegerValue(10),
-                      MakeUintegerAccessor(&NrSlUeMacSchedulerCluster::m_customRbNum),
-                      MakeUintegerChecker<uint16_t>());
+                      MakeUintegerAccessor(&NrSlUeMacSchedulerCluster::m_numChannels),
+                      MakeUintegerChecker<uint8_t>(1, 20))
+        .AddAttribute("SinrThreshold", "SINR threshold for conflict detection",
+                      DoubleValue(6.0), // 6dB约对应MCS 10的解调需求
+                      MakeDoubleAccessor(&NrSlUeMacSchedulerCluster::m_sinrThreshold),
+                      MakeDoubleChecker<double>(0.0, 20.0))
+        .AddAttribute("MaxTxPower", "Maximum transmission power (W)",
+                      DoubleValue(0.1), // 0.1W=20dBm, 符合V2X功率标准
+                      MakeDoubleAccessor(&NrSlUeMacSchedulerCluster::m_maxTxPower),
+                      MakeDoubleChecker<double>(0.01, 1.0))
+        .AddAttribute("NoisePower", "Noise power (W)",
+                      DoubleValue(1e-17), // 简化噪声模型
+                      MakeDoubleAccessor(&NrSlUeMacSchedulerCluster::m_noisePower),
+                      MakeDoubleChecker<double>(1e-19, 1e-15));
     return tid;
 }
 
-NrSlUeMacSchedulerCluster::NrSlUeMacSchedulerCluster()
+
+// CARLA添加传输指令(线程安全)
+void
+NrSlUeMacSchedulerCluster::AddCarlaTxCommand(const CarlaTxCommand& cmd)
 {
-    NS_LOG_FUNCTION(this);
-    m_grantSelectionUniformVariable = CreateObject<UniformRandomVariable>();
-    m_destinationUniformVariable = CreateObject<UniformRandomVariable>();
-    m_ueSelectedUniformVariable = CreateObject<UniformRandomVariable>();
+    NS_LOG_FUNCTION(this << cmd.srcL2Id << cmd.dstL2Id << cmd.subchannel_start << cmd.subchannel_num);
+    std::lock_guard<std::mutex> lock(m_cmdMutex);
+    m_carlaTxCommands.push_back(cmd);
 }
 
+// 实现: 清空已完成的指令
+void
+NrSlUeMacSchedulerCluster::ClearCompletedCommands()
+{
+    NS_LOG_FUNCTION(this);
+    std::lock_guard<std::mutex> lock(m_cmdMutex);
+    m_carlaTxCommands.clear();
+}
 
-// std::list<SlResourceInfo> NrSlUeMacSchedulerCluster::SelectResourcesWithConstraint(std::list<SlResourceInfo> txOpps, bool harqEnabled)
-// {
-//     std::list<SlResourceInfo> selectedResources;
-//     uint8_t maxTxNum = GetSlMaxTxTransNumPssch(); // 最大重传次数
+// 重写调度触发函数: 优先执行CARLA指令
+void
+NrSlUeMacSchedulerCluster::DoSchedNrSlTriggerReq(const SfnSf& sfn)
+{
+    NS_LOG_FUNCTION(this << sfn);
 
-//     // 遍历候选资源，筛选出符合自定义RB要求的资源
-//     for (auto& res : txOpps)
-//     {
-//         // 自定义规则：只选择 起始RB = m_customRbStart 且 RB数量 = m_customRbNum 的资源
-//         if (res.m_startSubCh == m_customRbStart && res.m_numSubCh == m_customRbNum)
-//         {
-//             selectedResources.push_back(res);
-//             // 满足最大重传次数后停止筛选
-//             if (harqEnabled && selectedResources.size() >= maxTxNum)
-//                 break;
-//             // 无HARQ时只选1个
-//             if (!harqEnabled && selectedResources.size() >= 1)
-//                 break;
-//         }
-//     }
+    // 步骤1: 优先执行CARLA下发的传输指令(核心)
+    ExecuteCarlaCommands(sfn);
 
-//     // 若未找到符合要求的资源，降级使用默认逻辑（避免调度失败）
-//     if (selectedResources.empty())
-//     {
-//         selectedResources = NrSlUeMacSchedulerCluster::SelectResourcesWithConstraint(txOpps, harqEnabled);
-//     }
+    // // 步骤2:(可选)保留NS-3自主调度逻辑, 作为降级方案
+    // // 若CARLA无指令, 执行NS3端分簇调度
+    // if (m_carlaTxCommands.empty())
+    // {
+    //     NS_LOG_DEBUG("No commands from CARLA, run NS3 local scheduling");
+    //     // 调用NS-3端分簇调度逻辑
+    //     // 收集链路→冲突图→分配RB→功率控制→创建Grant
+    // }
 
-//     return selectedResources;
-// }
+    // 步骤3: 父类原有逻辑: 发布Grant到MAC层
+    CheckForGrantsToPublish(sfn);
+}
 
+// 核心: 执行CARLA指令, 创建NS-3的传输Grant
+void
+NrSlUeMacSchedulerCluster::ExecuteCarlaCommands(const SfnSf& sfn)
+{
+    NS_LOG_FUNCTION(this << sfn);
+    std::lock_guard<std::mutex> lock(m_cmdMutex);
 
-// bool NrSlUeMacSchedulerCluster::DoNrSlAllocation(const std::list<SlResourceInfo>& candResources,
-//                                         const std::shared_ptr<NrSlUeMacSchedulerDstInfo>& dstInfo,
-//                                         std::set<SlGrantResource>& slotAllocList,
-//                                         const AllocationInfo& allocationInfo)
-// {
-//     std::list<SlResourceInfo> selectedResources;
+    if (m_carlaTxCommands.empty())
+    {
+        NS_LOG_DEBUG("No Carla Tx commands to execute");
+        return;
+    }
 
-//     // 根据HARQ是否使能，调用对应的自定义资源选择函数
-//     if (allocationInfo.m_harqEnabled)
-//     {
-//         selectedResources = SelectResourcesWithConstraint(candResources, true);
-//     }
-//     else
-//     {
-//         selectedResources = SelectResourcesForBlindRetransmissions(candResources);
-//     }
+    // 遍历所有CARLA指令, 逐一创建传输Grant
+    for (const auto& cmd : m_carlaTxCommands)
+    {
+        // 校验指令有效性(子信道不越界、数据大小>0)
+        uint8_t totalSubCh = GetTotalSubCh(); // 从父类获取总子信道数
+        if (cmd.subchannel_start + cmd.subchannel_num > totalSubCh || cmd.dataSize == 0)
+        {
+            NS_LOG_WARN("Invalid Carla command: src=" << cmd.srcL2Id 
+                << ", dst=" << cmd.dstL2Id << ", subchannel_start=" << (uint32_t)cmd.subchannel_start
+                << ", subchannel_num=" << (uint32_t)cmd.subchannel_num);
+            continue;
+        }
 
-//     // 将选中的资源（含自定义RB）转换为 SlGrantResource，填入 slotAllocList
-//     for (auto& res : selectedResources)
-//     {
-//         SlGrantResource grantRes;
-//         grantRes.m_sfnSf = res.m_sfnSf;       // 时隙信息
-//         grantRes.m_startSubCh = res.m_startSubCh; // 自定义RB起始索引
-//         grantRes.m_numSubCh = res.m_numSubCh;   // 自定义RB数量
-//         grantRes.m_rv = 0; // 冗余版本（可按默认逻辑）
-//         slotAllocList.insert(grantRes);
-//     }
+        // 1. 构建NS-3的资源块分配参数(严格遵循CARLA指令)
+        SlGrantResource grantRes;
+        grantRes.sfn = sfn;          // 当前时隙
+        grantRes.slPsschSubChStart = cmd.subchannel_start; // CARLA指定的子信道起始索引
+        grantRes.slPsschSubChLength = cmd.subchannel_num;     // CARLA指定的子信道数量
+        grantRes.slPsschSymLength = 14;      // 每个时隙14个符号(NS-3默认)
 
-//     // 计算TBSize（复用父类逻辑，确保RB能承载数据）
-//     uint32_t tbSize = CalculateTbSize(m_nrSlAmc,
-//                                       m_mcs,
-//                                       res.m_symbolsPerSlot,
-//                                       m_customRbNum,
-//                                       res.m_subChSize);
+        // 创建SlResourceInfo对象而不是SlGrantResource
+        std::list<SlResourceInfo> slotAllocList;
+        // 假设获取一些必要的参数（这里使用默认值或从其他地方获取）
+        uint16_t numSlPscchRbs = 2; // 默认值，可能需要从配置中获取
+        uint16_t slPscchSymStart = 0; // 默认值
+        uint16_t slPscchSymLength = 2; // 默认值
+        uint16_t slPsschSymStart = 3; // 默认值
+        uint16_t slSubchannelSize = 10; // 默认值
+        uint16_t slMaxNumPerReserve = 1; // 默认值
+        uint8_t slPsfchPeriod = 1; // 默认值
+        uint8_t slMinTimeGapPsfch = 1; // 默认值
+        uint8_t slMinTimeGapProcessing = 1; // 默认值
+        
+        SlResourceInfo resourceInfo(numSlPscchRbs, slPscchSymStart, slPscchSymLength,
+                                   slPsschSymStart, grantRes.slPsschSymLength,
+                                   slSubchannelSize, slMaxNumPerReserve,
+                                   slPsfchPeriod, slMinTimeGapPsfch,
+                                   slMinTimeGapProcessing, sfn,
+                                   cmd.subchannel_start, cmd.subchannel_num);
+        slotAllocList.push_back(resourceInfo);
 
-//     // 更新分配信息（TBSize、RLC PDU等），后续会生成grant下发
-//     // （此处可复用父类对RLC PDU的分配逻辑，或自定义）
-//     return !slotAllocList.empty(); // 分配成功返回true
-// }
+        // 2. 构建传输块信息(复用NS-3结构体)
+        AllocationInfo allocInfo;
+        allocInfo.m_priority = 10; // 优先级(CARLA可指定, 这里设为固定高优先级)
+        allocInfo.m_isDynamic = true; // 动态调度(单次传输)
+        allocInfo.m_harqEnabled = true; // 启用HARQ(可选, 提升可靠性)
+        allocInfo.m_tbSize = cmd.dataSize; // CARLA指定的数据大小
+        // 传输类型: 广播(dst=0)→ GroupCast, 单播→Unicast
+        // 注意：这里使用Groupcast而不是GroupCast（小写的c）
+        // 由于无法找到SidelinkInfo::CastType的确切定义，这里暂时注释掉
+        // 在实际使用中，需要找到正确的枚举值或定义
+
+        // 3. 确保目标L2 ID在NS-3的dstMap中(创建空的DstInfo, 仅用于链路管理)
+        if (m_dstMap.find(cmd.dstL2Id) == m_dstMap.end())
+        {
+            CreateDstInfoForCarlaCmd(cmd.dstL2Id); // 辅助函数: 创建目标信息
+        }
+
+        // 4. 调用父类方法创建Grant, 触发数据传输
+        // 由于修改了slotAllocList的类型，这里可以直接调用AttemptGrantAllocation
+        // 但由于注释掉了allocInfo.m_castType的设置，可能需要进一步调整
+        AttemptGrantAllocation(sfn, cmd.dstL2Id, slotAllocList, allocInfo);
+        NS_LOG_DEBUG("Executed Carla command: src=" << cmd.srcL2Id 
+            << ", dst=" << cmd.dstL2Id << ", Subchannel=[" << (uint32_t)cmd.subchannel_start 
+            << "," << (uint32_t)(cmd.subchannel_start+cmd.subchannel_num-1) << "], dataSize=" << cmd.dataSize);
+    }
+
+    // 执行完成后清空指令(避免重复调度, 也可在CARLA端控制清空时机)
+    m_carlaTxCommands.clear();
+}
+
+// 辅助函数: 为CARLA指令创建目标L2 ID的DstInfo(NS-3调度器需要)
+void
+NrSlUeMacSchedulerCluster::CreateDstInfoForCarlaCmd(uint32_t dstL2Id)
+{
+    NS_LOG_FUNCTION(this << dstL2Id);
+
+    // 1. 创建目标信息结构体 (NrSlUeMacSchedulerDstInfo)
+    auto dstInfo = std::make_shared<NrSlUeMacSchedulerDstInfo>(dstL2Id);
+
+    // 2. 准备逻辑信道 (LC) 的配置参数
+    NrSlUeCmacSapProvider::SidelinkLogicalChannelInfo lcParams;
+    lcParams.lcId = 13;                     // 逻辑信道ID (Sidelink默认数据信道)
+    lcParams.priority = 5;                  // 优先级
+    lcParams.pqi = 9;                       // PC5 QoS Class Identifier (非GBR)
+    lcParams.isGbr = false;                 // 非GBR承载
+    lcParams.castType = SidelinkInfo::CastType::Unicast; // 单播类型
+    // 其他参数如 mbr, gbr, harqEnabled, pdb, dynamic, rri 等可按需设置
+
+    // 3. 创建逻辑信道 (LC) 对象
+    // CreateLC 通常返回一个 std::shared_ptr<NrSlUeMacSchedulerLC>
+    auto lc = CreateLC(lcParams);
+    if (!lc)
+    {
+        NS_LOG_ERROR("CreateDstInfoForCarlaCmd: Failed to create Logical Channel (LC) for dstL2Id " << dstL2Id);
+        return;
+    }
+
+    // 4. 创建并填充逻辑信道组 (LCG)
+    uint8_t lcgId = 1; // 选择一个LCG ID，例如1
+    NrSlLCGPtr lcg = std::make_unique<NrSlUeMacSchedulerLCG>(lcgId);
+
+    // 使用 LCG 的 Insert 方法来添加 LC。
+    // CreateLC 返回的是 shared_ptr，而 Insert 需要 unique_ptr。
+    // 我们需要将 shared_ptr 转换为 unique_ptr。
+    // 注意：只有当你确定没有其他 shared_ptr 指向这个 LC 对象时，才能安全地执行此操作。
+    // 在这个上下文中，因为是我们刚刚创建的，所以是安全的。
+    lcg->Insert(NrSlLCPtr(lc.release()));
+
+    // 5. 将 LCG 插入到 DstInfo 中
+    // NrSlUeMacSchedulerDstInfo::Insert 方法也需要一个右值引用。
+    dstInfo->Insert(std::move(lcg));
+
+    // 6. 将准备好的 DstInfo 加入到调度器的全局 dstMap 中
+    m_dstMap[dstL2Id] = dstInfo;
+
+    NS_LOG_DEBUG("CreateDstInfoForCarlaCmd: Successfully created DstInfo for L2 ID " << dstL2Id 
+                 << " with LC ID " << static_cast<uint32_t>(lcParams.lcId)
+                 << " in LCG ID " << static_cast<uint32_t>(lcgId));
+}
 
 }

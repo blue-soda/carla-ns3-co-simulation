@@ -307,6 +307,7 @@ void CamSenderNR::SendCam(uint32_t bytes, Ipv4Address dest_addr)
                   << " Dest: " << dest_addr << ":" << m_port
               );
 }
+
 TypeId CamSenderNR::GetTypeId() {
     static TypeId tid = TypeId("ns3::CamSenderNR")
                             .SetParent<CamSender>()
@@ -318,6 +319,82 @@ void CamSenderNR::StopApplication() {
     CamSender::StopApplication();
 }
 
+void CamSenderNR::ScheduleCam(uint32_t bytes, Ipv4Address dest_addr, 
+                               uint8_t rb_start, uint8_t rb_num, double tx_power, uint32_t dest_L2Id) { 
+  Simulator::Schedule(MilliSeconds(0), [this, bytes, dest_addr, rb_start, rb_num, tx_power, dest_L2Id] { 
+    SendCam(bytes, dest_addr, rb_start, rb_num, tx_power, dest_L2Id); 
+  });
+}
+
+void CamSenderNR::SendCam(uint32_t bytes, Ipv4Address dest_addr, 
+                               uint8_t rb_start, uint8_t rb_num, double tx_power, uint32_t dest_L2Id)
+{
+  NS_LOG_FUNCTION(this << bytes << dest_addr << (uint32_t)rb_start << (uint32_t)rb_num << tx_power << dest_L2Id);
+  
+  // 创建 Packet（与原有逻辑一致）
+  Ptr<Packet> packet = Create<Packet>(bytes);
+  // 添加 CAM 头部（与原有逻辑一致）
+  Ptr<MobilityModel> mobility = GetNode()->GetObject<MobilityModel>();
+  Vector pos = mobility->GetPosition();
+  Vector vel = mobility->GetVelocity();
+  double speed = std::sqrt(vel.x * vel.x + vel.y * vel.y);
+  double heading = std::atan2(vel.y, vel.x) * 180.0 / M_PI;
+  CamHeader camHeader;
+  camHeader.SetVehicleId(m_vehicleId);
+  camHeader.SetPositionX(pos.x);
+  camHeader.SetPositionY(pos.y);
+  camHeader.SetSpeed(speed);
+  camHeader.SetHeading(heading);
+  camHeader.SetTimestamp(Simulator::Now().GetMilliSeconds());
+  packet->AddHeader(camHeader);
+
+  // 存储 Packet 与 RB/功率的关联（后续发送时使用）
+  m_packetTxMeta[packet] = {rb_start, rb_num, tx_power};
+
+  // 触发发送（与原有逻辑一致，但后续在 SendTo 后补充调度器指令）
+  InetSocketAddress destination = InetSocketAddress(dest_addr, m_port);
+  m_socket->SendTo(packet, 0, destination);
+
+  // 关键：向调度器下发 CARLA 指令（RB/功率/发送方/接收方/数据大小）
+  Ptr<NrSlUeMacSchedulerCluster> scheduler = GetScheduler();
+  if (!scheduler) {
+    NS_LOG_WARN("CamSenderNR: failed to get cluster scheduler");
+    return;
+  }
+
+  // 获取发送方和接收方的 L2 ID
+  Ptr<NrUeNetDevice> ueNetDev = DynamicCast<NrUeNetDevice>(GetNode()->GetDevice(0));
+  uint32_t srcL2Id = ueNetDev->GetMac(0)->GetObject<NrSlUeMac>()->GetSrcL2Id(); // 发送方 L2 ID
+  uint32_t dstL2Id = dest_L2Id; // 使用传入的接收方 L2 ID
+
+  // 构建 CARLA 传输指令（与第一步定义的 CarlaTxCommand 对齐）
+  CarlaTxCommand cmd;
+  cmd.srcL2Id = srcL2Id;
+  cmd.dstL2Id = dstL2Id;
+  cmd.dataSize = packet->GetSize(); // 包含头部的总数据大小
+  cmd.subchannel_start = rb_start;
+  cmd.subchannel_num = rb_num;
+  cmd.txPower = tx_power;
+  cmd.linkType = LinkType::CLUSTER_INTERNAL; // 根据实际链路类型设置（簇内/簇间）
+
+  // 调用调度器接口，下发指令
+  scheduler->AddCarlaTxCommand(cmd);
+
+  // 日志输出
+  NS_LOG_INFO("CamSenderNR: scheduled CAM, srcL2Id=" << srcL2Id << ", dstL2Id=" << dstL2Id
+              << ", Subchannel=[" << (uint32_t)rb_start << "," << (uint32_t)(rb_start+rb_num-1) << "]"
+              << ", size=" << packet->GetSize() << " bytes");
+}
+
+// 辅助函数：获取调度器实例（从 Node 的 NetDevice 中提取）
+Ptr<NrSlUeMacSchedulerCluster> CamSenderNR::GetScheduler()
+{
+  Ptr<NrUeNetDevice> ueNetDev = DynamicCast<NrUeNetDevice>(GetNode()->GetDevice(0));
+  if (!ueNetDev) return nullptr;
+  Ptr<NrSlUeMac> slMac = ueNetDev->GetMac(0)->GetObject<NrSlUeMac>();
+  if (!slMac) return nullptr;
+  return slMac->GetScheduler()->GetObject<NrSlUeMacSchedulerCluster>();
+}
 
 // ==================== CamReceiverNR ====================
 NS_OBJECT_ENSURE_REGISTERED(CamReceiverNR);

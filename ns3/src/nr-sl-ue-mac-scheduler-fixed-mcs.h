@@ -59,7 +59,7 @@ class NrSlUeMacSchedulerFixedMcs : public NrSlUeMacScheduler
      */
     ~NrSlUeMacSchedulerFixedMcs() override;
 
-  private:
+  protected:
     void DoRemoveNrSlLcConfigReq(uint8_t lcid, uint32_t dstL2Id) override;
 
     void DoSchedNrSlRlcBufferReq(

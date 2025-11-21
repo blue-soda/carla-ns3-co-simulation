@@ -29,6 +29,15 @@ public:
     virtual void ScheduleCam(uint32_t bytes, Ipv4Address dest_addr);
     virtual void SendCam(uint32_t bytes, Ipv4Address dest_addr);
     bool IsRunning();
+    struct TxMeta {
+        uint8_t rb_start;
+        uint8_t rb_num;
+        double tx_power;
+    };
+    std::unordered_map<Ptr<Packet>, TxMeta> m_packetTxMeta; // Packet → 传输元信息
+    // 获取调度器实例（从 Node 的 NetDevice 中提取）
+    Ptr<NrSlUeMacSchedulerCluster> GetScheduler();
+
 protected:
     // Application lifecycle hooks (to be overridden)
     void StartApplication() override;
@@ -95,21 +104,11 @@ public:
     void StartApplication() override;
     void StopApplication() override;
     void SendCam(uint32_t bytes, Ipv4Address dest_addr) override;
-    Ptr<NrSlHelper> m_nrSlHelper;
-    void SetNrSlHelper(Ptr<NrSlHelper> helper) { m_nrSlHelper = helper; }
-    SidelinkInfo m_slInfo;
-    uint32_t m_seq;
-    CamSenderNR(){
-        // m_slInfo.m_castType    = SidelinkInfo::CastType::Broadcast;
-
-        m_slInfo.m_castType = SidelinkInfo::CastType::Groupcast;
-        m_slInfo.m_dstL2Id     = 255;                            
-        m_slInfo.m_rri         = MilliSeconds(100);               // 周期性资源分配
-        m_slInfo.m_pdb         = Seconds(0);                // 延迟预算20ms
-        m_slInfo.m_harqEnabled = true;                            // 开启物理层重传
-    }
-    ApplicationContainer m_clientApp;
-    void InstallClientApp(ApplicationContainer app) { m_clientApp = app; }
+    void ScheduleCam(uint32_t bytes, Ipv4Address dest_addr, 
+                               uint8_t rb_start, uint8_t rb_num, double tx_power,  uint32_t dest_L2Id);
+    void SendCam(uint32_t bytes, Ipv4Address dest_addr, 
+                                uint8_t rb_start, uint8_t rb_num, double tx_power, uint32_t dest_L2Id);
+    Ptr<NrSlUeMacSchedulerCluster> GetScheduler();
 };
 class CamReceiverNR : public CamReceiver {
 public:

@@ -73,6 +73,10 @@ class NrSlUeMac : public NrUeMac
     }
     // Structures/classes used in API
 
+    Ptr<NrSlUeMacScheduler> GetScheduler() const
+    {
+        return m_nrSlUeMacScheduler;
+    }
     /**
      * \brief Structure to pass grant from NrSlUeMacScheduler to this object
      */
