@@ -57,10 +57,10 @@ std::unordered_map<int, TransferRequestSubChannel> latestRequestsSubChannel;
 
 std::mutex dataMutex;
 std::atomic firstDataReceived(false);
+
+Ptr<NrSlHelper> NazonoNrSlHelper; //deletion of this var will cause Signals.SIGABRT: 6
 bool running = true;
-
 int send_to_carla_fd = -1;
-
 int totalSubChannel = 0;
 
 void ProcessData_VehiclePosition(const json& vehicleArray) {
@@ -142,6 +142,7 @@ void ProcessData_TransferRequests(const json &requests) {
         } else {
           std::cout << "[INFO] sender index: " << source_index << " id: " << source << " sending " << size << " bytes\n";
           // 对于没有指定子信道的情况，仍然使用原有接口
+          senders[source_index]->ScheduleCam((uint32_t)size, vehicleIps[target_index]);
         }
       }
     }
@@ -944,13 +945,13 @@ void InitializeVehicles_NR_V2X_Mode2(uint32_t n_vehicles = 3)
       }
     }
 
+    NazonoNrSlHelper = nrSlHelper;
     // // Install Application
     std::cout << "[INFO] Installing Application\n";    
     for (uint32_t i = 0; i < vehicles.GetN(); i++) {
         Ipv4Address ip = ueIpIface.GetAddress(i);
         std::cout << "[INFO] Vehicle " << i << " IP address: " << ip << "\n";
         vehicleIps.push_back(ip);
-
 
         Ptr<CamSenderNR> sender = CreateObject<CamSenderNR>();
         sender->SetVehicleId(i+1);
