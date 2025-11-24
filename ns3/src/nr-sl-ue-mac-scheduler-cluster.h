@@ -10,6 +10,7 @@
 #include <ns3/random-variable-stream.h>
 #include <mutex>
 #include <vector>
+#include <queue>
 
 namespace ns3
 {
@@ -21,15 +22,17 @@ enum class LinkType {
 };
 
 // CARLA下发的传输指令结构体
-struct CarlaTxCommand
-{
-    uint32_t srcL2Id;       // 发送方L2 ID
-    uint32_t dstL2Id;       // 接收方L2 ID(广播为0)
-    uint32_t dataSize;      // 数据大小(字节)
-    uint8_t subchannel_start; // CARLA指定的子信道起始索引
-    uint8_t subchannel_num;   // CARLA指定的子信道数量(通常1~4)
-    double txPower;         // CARLA指定的发射功率(W, 可选)
-    LinkType linkType;      // 链路类型(簇内/簇间)
+struct CarlaTxCommand {
+    uint32_t srcL2Id;               // 源终端 L2 ID
+    uint32_t dstL2Id;               // 目标终端 L2 ID
+    uint8_t lcid;                   // 逻辑信道 ID
+    uint16_t slSubchannelStart;     // 子信道起始位置
+    uint16_t slSubchannelSize;      // 子信道数量
+    uint8_t mcs;                    // MCS 值
+    uint32_t tbSize;                // 传输块大小（字节）
+    SfnSf sfn;                      // 期望发送的时隙（可选，用于同步）
+    bool isDynamic;                 // 是否为动态调度(true)或 SPS(false)
+    Time rri;                       // SPS 资源预留间隔（仅 SPS 时有效）
 };
 
 class NrSlUeMacSchedulerCluster : public NrSlUeMacSchedulerFixedMcs
@@ -46,19 +49,24 @@ eturn The TypeId of the class
     void AddCarlaTxCommand(const CarlaTxCommand& cmd);
     // 清空已执行的指令(避免重复调度)
     void ClearCompletedCommands();
-
+    
 private:
     // 重写调度触发函数, 优先执行CARLA指令
-    void DoSchedNrSlTriggerReq(const SfnSf& sfn) override;
+    // void DoSchedNrSlTriggerReq(const SfnSf& sfn) override;
 
-    // 执行CARLA指令, 创建NS-3的Grant并发送
-    void ExecuteCarlaCommands(const SfnSf& sfn);
+    uint32_t LogicalChannelPrioritization(
+        const SfnSf& sfn,
+        std::map<uint32_t, std::vector<uint8_t>> dstsAndLcsToSched,
+        AllocationInfo& allocationInfo,
+        std::list<SlResourceInfo>& candResources) override;
+    // // 执行CARLA指令, 创建NS-3的Grant并发送
+    // void ExecuteCarlaCommands(const SfnSf& sfn);
 
-    // 为CARLA指令创建目标L2 ID的DstInfo
-    void CreateDstInfoForCarlaCmd(uint32_t dstL2Id);
+    // // 为CARLA指令创建目标L2 ID的DstInfo
+    // void CreateDstInfoForCarlaCmd(uint32_t dstL2Id);
 
     // 存储CARLA下发的待执行指令(线程安全, 用互斥锁保护)
-    std::vector<CarlaTxCommand> m_carlaTxCommands;
+    std::queue<CarlaTxCommand> m_carlaTxCommands;
     std::mutex m_cmdMutex;
     
     // 配置参数

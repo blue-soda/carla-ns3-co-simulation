@@ -56,26 +56,44 @@ def main():
             if sent < 2:
                 time.sleep(2)
                 bridge.send_transfer_requests([
-                # {"source":ego_vehicle.id, "target":all_vehicles[0].id, "size":500},
-                {"source":all_vehicles[1].id, "target":all_vehicles[2].id, "size":10000},
-                {"source":all_vehicles[1].id, "target":all_vehicles[2].id, "size":10000},
-                {"source":all_vehicles[1].id, "target":all_vehicles[2].id, "size":10000},
-                {"source":all_vehicles[1].id, "target":all_vehicles[2].id, "size":10000},
-                {"source":all_vehicles[1].id, "target":all_vehicles[2].id, "size":10000},
-                {"source":all_vehicles[1].id, "target":all_vehicles[2].id, "size":10000},
-                {"source":all_vehicles[1].id, "target":all_vehicles[2].id, "size":10000},
-                {"source":all_vehicles[1].id, "target":all_vehicles[2].id, "size":10000},
-                {"source":all_vehicles[1].id, "target":all_vehicles[2].id, "size":10000},
-                {"source":all_vehicles[1].id, "target":all_vehicles[2].id, "size":10000},
-                # {"source":all_vehicles[2].id, "target":all_vehicles[3].id, "size":20052},
-                # {"source":all_vehicles[1].id, "target":all_vehicles[4].id, "size":30052},
-                # {"source":all_vehicles[5].id, "target":all_vehicles[1].id, "size":50052},
-                # {"source":all_vehicles[6].id, "target":all_vehicles[1].id, "size":60052},
-                # {"source":all_vehicles[7].id, "target":all_vehicles[1].id, "size":65002},
-                # {"source":all_vehicles[1].id, "target":all_vehicles[8].id, "size":67002},
-                # {"source":all_vehicles[1].id, "target":all_vehicles[9].id, "size":70002},
-                # {"source":0, "target":2, "size":200},
+                    {
+                        "source": all_vehicles[1].id, 
+                        "target": all_vehicles[2].id, 
+                        "size": 10000,
+                        "sc_start": 0,
+                        "sc_num": 5,
+                        "tx_power": 0.1
+                    },
+                    {
+                        "source": all_vehicles[1].id, 
+                        "target": all_vehicles[3].id, 
+                        "size": 10000,
+                        "sc_start": 5,
+                        "sc_num": 5,
+                        "tx_power": 0.1
+                    }
                 ])
+                # bridge.send_transfer_requests([
+                # # {"source":ego_vehicle.id, "target":all_vehicles[0].id, "size":500},
+                # {"source":all_vehicles[1].id, "target":all_vehicles[2].id, "size":10000},
+                # {"source":all_vehicles[1].id, "target":all_vehicles[2].id, "size":10000},
+                # {"source":all_vehicles[1].id, "target":all_vehicles[2].id, "size":10000},
+                # {"source":all_vehicles[1].id, "target":all_vehicles[2].id, "size":10000},
+                # {"source":all_vehicles[1].id, "target":all_vehicles[2].id, "size":10000},
+                # {"source":all_vehicles[1].id, "target":all_vehicles[2].id, "size":10000},
+                # {"source":all_vehicles[1].id, "target":all_vehicles[2].id, "size":10000},
+                # {"source":all_vehicles[1].id, "target":all_vehicles[2].id, "size":10000},
+                # {"source":all_vehicles[1].id, "target":all_vehicles[2].id, "size":10000},
+                # {"source":all_vehicles[1].id, "target":all_vehicles[2].id, "size":10000},
+                # # {"source":all_vehicles[2].id, "target":all_vehicles[3].id, "size":20052},
+                # # {"source":all_vehicles[1].id, "target":all_vehicles[4].id, "size":30052},
+                # # {"source":all_vehicles[5].id, "target":all_vehicles[1].id, "size":50052},
+                # # {"source":all_vehicles[6].id, "target":all_vehicles[1].id, "size":60052},
+                # # {"source":all_vehicles[7].id, "target":all_vehicles[1].id, "size":65002},
+                # # {"source":all_vehicles[1].id, "target":all_vehicles[8].id, "size":67002},
+                # # {"source":all_vehicles[1].id, "target":all_vehicles[9].id, "size":70002},
+                # # {"source":0, "target":2, "size":200},
+                # ])
                 sent += 1
             time.sleep(1)
             

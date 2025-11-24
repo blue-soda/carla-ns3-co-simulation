@@ -109,7 +109,7 @@ class NrSlUeMacSchedulerFixedMcs : public NrSlUeMacScheduler
      *
      * \return destination layer 2 ID of the allocated destination if any, zero otherwise
      */
-    uint32_t LogicalChannelPrioritization(
+    virtual uint32_t LogicalChannelPrioritization(
         const SfnSf& sfn,
         std::map<uint32_t, std::vector<uint8_t>> dstsAndLcsToSched,
         AllocationInfo& allocationInfo,

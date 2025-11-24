@@ -573,7 +573,6 @@ NrSlUeMacSchedulerFixedMcs::LogicalChannelPrioritization(
     std::map<uint32_t, std::vector<uint8_t>> dstsAndLcsToSched,
     AllocationInfo& allocationInfo,
     std::list<SlResourceInfo>& candResources)
-
 {
     NS_LOG_FUNCTION(this << dstsAndLcsToSched.size() << candResources.size());
 
@@ -1193,9 +1192,19 @@ NrSlUeMacSchedulerFixedMcs::CreateSinglePduGrant(const SfnSf& sfn,
         auto itGrantVector = itGrantInfo->second.begin();
         for (; itGrantVector != itGrantInfo->second.end(); ++itGrantVector)
         {
+            // 修改：添加子信道信息比较，区分不同子信道的授权请求
             if (itGrantVector->slotAllocations.begin()->slRlcPduInfo.size() ==
                 slotAllocList.begin()->slRlcPduInfo.size())
             {
+                // 首先检查子信道信息是否相同，如果不同则直接跳过，认为不是同一授权
+                if (itGrantVector->slotAllocations.begin()->slPsschSubChStart != 
+                    slotAllocList.begin()->slPsschSubChStart ||
+                    itGrantVector->slotAllocations.begin()->slPsschSubChLength != 
+                    slotAllocList.begin()->slPsschSubChLength)
+                {
+                    continue; // 子信道不同，不是同一授权，继续检查下一个
+                }
+                
                 uint16_t foundLcs = 0;
                 for (auto itGrantRlcPdu : itGrantVector->slotAllocations.begin()->slRlcPduInfo)
                 {
@@ -1717,12 +1726,12 @@ NrSlUeMacSchedulerFixedMcs::DoNrSlAllocation(
         slotAlloc.slRlcPduInfo = allocationInfo.m_allocatedRlcPdus;
         slotAlloc.mcs = dstInfo->GetDstMcs();
 
-        // 修复1：PSCCH参数校验+默认值填充（避免无效配置）
+        // PSCCH参数校验+默认值填充（避免无效配置）
         slotAlloc.numSlPscchRbs = (itTxOpps->numSlPscchRbs > 0) ? itTxOpps->numSlPscchRbs : MIN_PSCCH_RBS;
         slotAlloc.slPscchSymStart = (itTxOpps->slPscchSymStart >= MIN_SYM_START) ? itTxOpps->slPscchSymStart : MIN_SYM_START;
         slotAlloc.slPscchSymLength = (itTxOpps->slPscchSymLength > 0) ? itTxOpps->slPscchSymLength : MIN_SYM_LENGTH;
 
-        // 修复2：PSSCH参数校验+默认值填充（核心！避免子信道长度为0）
+        // PSSCH参数校验+默认值填充（核心！避免子信道长度为0）
         slotAlloc.slPsschSymStart = (itTxOpps->slPsschSymStart >= MIN_SYM_START) ? itTxOpps->slPsschSymStart : MIN_SYM_START;
         slotAlloc.slPsschSymLength = (itTxOpps->slPsschSymLength > 0) ? itTxOpps->slPsschSymLength : 14; // 默认全符号（14个OFDM符号）
         slotAlloc.slPsschSubChStart = (itTxOpps->slSubchannelStart >= 0) ? itTxOpps->slSubchannelStart : 0;
@@ -1744,28 +1753,22 @@ NrSlUeMacSchedulerFixedMcs::DoNrSlAllocation(
             slotAlloc.slotNumInd = (remainingSlots > itTxOpps->slMaxNumPerReserve) ? itTxOpps->slMaxNumPerReserve : remainingSlots;
         }
 
-        // 修复4：填充RB位图（最关键！给接收端传递有效RB索引）
-        // 注意：需要先确保SlGrantResource结构体有"m_rbBitmap"成员（若没有则添加）
-        std::vector<int> rbBitmap;
-        uint32_t startRb = slotAlloc.slPsschSubChStart;
-        uint32_t rbCount = slotAlloc.slPsschSubChLength;
-        for (uint32_t i = 0; i < rbCount; ++i)
+        // 修复4：填充子信道位图
+        std::vector<int> subChBitmap;
+        uint32_t startSubCh = slotAlloc.slPsschSubChStart;
+        uint32_t subChCount = slotAlloc.slPsschSubChLength;
+        for (uint32_t i = 0; i < subChCount; ++i)
         {
-            rbBitmap.push_back(startRb + i); // 填充每个RB的索引（起始+偏移）
+            subChBitmap.push_back(startSubCh + i); // 填充每个子信道的索引（起始+偏移）
         }
-        slotAlloc.m_rbBitmap = rbBitmap; // 将RB位图存入grant，发送给接收端
+        std::cout << "Slot SFN=" << slotAlloc.sfn << ", DstL2Id=" << slotAlloc.dstL2Id << ", 子信道位图=";
+        for(auto& val : subChBitmap) 
+            std::cout << val << "-";
+        std::cout << ", 子信道长度=" << slotAlloc.slPsschSubChLength << std::endl;
 
         slotAllocList.emplace(slotAlloc);
     }
     std::cout << "成功分配 " << slotAllocList.size() << " 个slot资源\n";
-    for (const auto& slotAlloc : slotAllocList)
-    {
-        std::cout << "Slot SFN=" << slotAlloc.sfn << ", DstL2Id=" << slotAlloc.dstL2Id 
-                            << ", RB位图=";
-        for(auto& val : slotAlloc.m_rbBitmap) 
-            std::cout << val << "-";
-        std::cout << ", 子信道长度=" << slotAlloc.slPsschSubChLength << std::endl;
-    }
     return allocated;
 }
 

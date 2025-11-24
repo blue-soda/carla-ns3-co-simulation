@@ -99,7 +99,6 @@ void ProcessData_VehiclePosition(const json& vehicleArray) {
 }
 
 void ProcessData_TransferRequests(const json &requests) {
-  bool contains_rb = requests.contains("sc_start") && requests.contains("sc_num");
   for (const auto &req : requests) {
     if (!req.contains("source") || !req.contains("target") || !req.contains("size")) {
       std::cerr << "[WARN] transfer request missing fields, skipping\n";
@@ -108,6 +107,8 @@ void ProcessData_TransferRequests(const json &requests) {
     int source = req["source"].get<int>();
     int target = req["target"].get<int>();
     int size = req["size"].get<int>();
+
+    bool contains_rb = req.contains("sc_start") && req.contains("sc_num");
     if(contains_rb) {
       uint8_t sc_start = req["sc_start"].get<uint8_t>();
       uint8_t sc_num = req["sc_num"].get<uint8_t>();
@@ -138,7 +139,7 @@ void ProcessData_TransferRequests(const json &requests) {
           TransferRequestSubChannel sc_req = latestRequestsSubChannel[source];
           std::cout << "[INFO] sender index: " << source_index << " id: " << source << " sending " << sc_req.size << " bytes to " << target_index << " id: " << target << "subChannel_start: " << (uint32_t)sc_req.start << " num: " << (uint32_t)sc_req.num << " tx_power: " << sc_req.tx_power << " W\n";
           CamSenderNR *sender_nr = GetPointer(DynamicCast<CamSenderNR>(senders[source_index]));
-          sender_nr->ScheduleCam((uint32_t)sc_req.size, vehicleIps[target_index], sc_req.start, sc_req.num, sc_req.tx_power, vehicleL2Ids[target_index]);
+          sender_nr->ScheduleCam((uint32_t)sc_req.size, vehicleIps[target_index], sc_req.start, sc_req.num, sc_req.tx_power, vehicleL2Ids[source_index] , vehicleL2Ids[target_index]);
         } else {
           std::cout << "[INFO] sender index: " << source_index << " id: " << source << " sending " << size << " bytes\n";
           // 对于没有指定子信道的情况，仍然使用原有接口
@@ -368,6 +369,8 @@ void SocketSenderServerDisconnect() {
 
 int main(int argc, char *argv[]) {
 
+  // LogComponentEnable("NrSlUeMacSchedulerCluster", LOG_ALL);
+  // LogComponentEnable("NrSlUeMacSchedulerFixedMcs", LOG_ALL);
   LogComponentEnable("CamApplication", LOG_ALL);
   // LogComponentEnable("NrSlUeMac", LOG_LEVEL_INFO);
   // LogComponentEnable("NrUeNetDevice", LOG_LEVEL_INFO);
@@ -739,8 +742,8 @@ void InitializeVehicles_NR_V2X_Mode2(uint32_t n_vehicles = 3)
      * In this example we use NrSlUeMacSchedulerFixedMcs scheduler, which uses
      * a fixed MCS value
      */
-    nrSlHelper->SetNrSlSchedulerTypeId(NrSlUeMacSchedulerFixedMcs::GetTypeId());
-    // nrSlHelper->SetNrSlSchedulerTypeId(ns3::NrSlUeMacSchedulerCluster::GetTypeId());
+    // nrSlHelper->SetNrSlSchedulerTypeId(NrSlUeMacSchedulerFixedMcs::GetTypeId());
+    nrSlHelper->SetNrSlSchedulerTypeId(ns3::NrSlUeMacSchedulerCluster::GetTypeId());
 
     // nrSlHelper->SetUeSlSchedulerAttribute("Mcs", UintegerValue(14));
     nrSlHelper->SetUeSlSchedulerAttribute("Mcs", UintegerValue(20));

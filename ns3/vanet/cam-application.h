@@ -31,7 +31,7 @@ public:
     bool IsRunning();
     struct TxMeta {
         uint8_t rb_start;
-        uint8_t rb_num;
+        uint8_t sc_num;
         double tx_power;
     };
     std::unordered_map<Ptr<Packet>, TxMeta> m_packetTxMeta; // Packet → 传输元信息
@@ -105,10 +105,11 @@ public:
     void StopApplication() override;
     void SendCam(uint32_t bytes, Ipv4Address dest_addr) override;
     void ScheduleCam(uint32_t bytes, Ipv4Address dest_addr, 
-                               uint8_t rb_start, uint8_t rb_num, double tx_power,  uint32_t dest_L2Id);
+                               uint8_t sc_start, uint8_t sc_num, double tx_power, uint32_t src_L2Id, uint32_t dest_L2Id);
     void SendCam(uint32_t bytes, Ipv4Address dest_addr, 
-                                uint8_t rb_start, uint8_t rb_num, double tx_power, uint32_t dest_L2Id);
+                                uint8_t sc_start, uint8_t sc_num, double tx_power, uint32_t src_L2Id, uint32_t dest_L2Id);
     Ptr<NrSlUeMacSchedulerCluster> GetScheduler();
+    Ptr<NrSlUeMacSchedulerCluster> m_scheduler = nullptr;
 };
 class CamReceiverNR : public CamReceiver {
 public:
