@@ -1761,14 +1761,18 @@ NrSlUeMacSchedulerFixedMcs::DoNrSlAllocation(
         {
             subChBitmap.push_back(startSubCh + i); // 填充每个子信道的索引（起始+偏移）
         }
-        std::cout << "Slot SFN=" << slotAlloc.sfn << ", DstL2Id=" << slotAlloc.dstL2Id << ", 子信道位图=";
-        for(auto& val : subChBitmap) 
-            std::cout << val << "-";
-        std::cout << ", 子信道长度=" << slotAlloc.slPsschSubChLength << std::endl;
-
+        // std::cout << "Slot SFN=" << slotAlloc.sfn << ", DstL2Id=" << slotAlloc.dstL2Id << ", 子信道位图=";
+        NS_LOG_INFO("Slot SFN=" << slotAlloc.sfn << ", DstL2Id=" << slotAlloc.dstL2Id << ", 子信道位图=");
+        for(auto& val : subChBitmap) {
+            // std::cout << val << "-";
+            NS_LOG_INFO(val << "-");
+        }
+        // std::cout << ", 子信道长度=" << slotAlloc.slPsschSubChLength << std::endl;
+        NS_LOG_INFO(", 子信道长度=" << slotAlloc.slPsschSubChLength);
         slotAllocList.emplace(slotAlloc);
     }
-    std::cout << "成功分配 " << slotAllocList.size() << " 个slot资源\n\n";
+    // std::cout << "成功分配 " << slotAllocList.size() << " 个slot资源\n\n";
+    NS_LOG_INFO("成功分配 " << slotAllocList.size() << " 个slot资源");
     return allocated;
 }
 

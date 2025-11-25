@@ -33,7 +33,7 @@ void
 NrSlUeMacSchedulerManual::AddCarlaTxCommand(const CarlaTxCommand& cmd)
 {
     NS_LOG_FUNCTION(this << cmd.srcL2Id << cmd.dstL2Id << cmd.slSubchannelStart << cmd.slSubchannelSize);
-    std::cout << "[DEBUG] NrSlUeMacSchedulerManual::AddCarlaTxCommand called\n";
+    // std::cout << "[DEBUG] NrSlUeMacSchedulerManual::AddCarlaTxCommand called\n";
     std::lock_guard<std::mutex> lock(m_cmdMutex);
     m_carlaTxCommandsByDst[cmd.dstL2Id].push(cmd);
 }
@@ -261,8 +261,11 @@ NrSlUeMacSchedulerManual::LogicalChannelPrioritization(
             uint32_t srcL2Id = GetMac()->GetSrcL2Id();
             if (manualCmd.srcL2Id == srcL2Id)
             {
-                std::cout << "[DEBUG] Manual scheduling command matched: srcL2Id=" << manualCmd.srcL2Id 
-                            << ", dstL2Id=" << manualCmd.dstL2Id << ", current maxDataSize=" << manualCmd.maxDataSize << std::endl;
+                // std::cout << "[DEBUG] Manual scheduling command matched: srcL2Id=" << manualCmd.srcL2Id 
+                //             << ", dstL2Id=" << manualCmd.dstL2Id << ", current maxDataSize=" << manualCmd.maxDataSize << std::endl;
+                NS_LOG_DEBUG("Manual scheduling command matched: srcL2Id=" << manualCmd.srcL2Id 
+                                << ", dstL2Id=" << manualCmd.dstL2Id 
+                                << ", current maxDataSize=" << manualCmd.maxDataSize);
                 hasManualCmd = true;
             }
         }
@@ -274,7 +277,8 @@ NrSlUeMacSchedulerManual::LogicalChannelPrioritization(
         for (auto& itLc : rItSelectedLcs->second)
         {
             currBufferSize = currBufferSize + lcgMap.begin()->second->GetTotalSizeOfLC(itLc);
-            std::cout << "currBufferSize: " << currBufferSize << std::endl;
+            // std::cout << "currBufferSize: " << currBufferSize << std::endl;
+            NS_LOG_DEBUG("currBufferSize: " << currBufferSize);
         }
         nLcsInQueue = nLcsInQueue + rItSelectedLcs->second.size();
         bufferSize = bufferSize + currBufferSize;
@@ -286,13 +290,15 @@ NrSlUeMacSchedulerManual::LogicalChannelPrioritization(
         if(hasManualCmd) {
             lSubch = manualCmd.slSubchannelSize;
             tbSize = CalculateTbSize(GetAmc(), dstMcs, symbolsPerSlot, lSubch, subChannelSize);
-            std::cout << "hasManualCmd. lSubch: " << lSubch << ", tbSize: " << tbSize << ", GetTotalSubCh: " << totalSubCh << std::endl;
+            // std::cout << "hasManualCmd. lSubch: " << lSubch << ", tbSize: " << tbSize << ", GetTotalSubCh: " << totalSubCh << std::endl;
+            NS_LOG_DEBUG("hasManualCmd. lSubch: " << lSubch << ", tbSize: " << tbSize << ", GetTotalSubCh: " << totalSubCh);
         } else {
             do {
                 lSubch++;
                 tbSize = CalculateTbSize(GetAmc(), dstMcs, symbolsPerSlot, lSubch, subChannelSize);
             } while (tbSize < bufferSize + 5 && lSubch < totalSubCh);
-            std::cout << "lSubch: " << lSubch << ", tbSize: " << tbSize << ", GetTotalSubCh: " << totalSubCh << std::endl;
+            // std::cout << "lSubch: " << lSubch << ", tbSize: " << tbSize << ", GetTotalSubCh: " << totalSubCh << std::endl;
+            NS_LOG_DEBUG("lSubch: " << lSubch << ", tbSize: " << tbSize << ", GetTotalSubCh: " << totalSubCh);
         }
 
         NS_LOG_DEBUG("Trying " << nLcsInQueue << " LCs with total buffer size of " << bufferSize
@@ -308,7 +314,7 @@ NrSlUeMacSchedulerManual::LogicalChannelPrioritization(
             GetMac()->GetCandidateResources(sfn, params),
             lcgMap.begin()->second->GetLcRri(lcIdOfRef),
             m_cResel);
-        std::cout << "filteredReso size: " << filteredReso.size() << std::endl;
+        // std::cout << "filteredReso size: " << filteredReso.size() << std::endl;
         if (filteredReso.empty())
         {
             NS_LOG_DEBUG("Resources not found");
@@ -394,17 +400,21 @@ NrSlUeMacSchedulerManual::LogicalChannelPrioritization(
         allocQueue.pop();
     }
 
-    std::cout << "[DEBUG] Total allocated size: " << allocatedSize << " bytes" << std::endl;
+    // std::cout << "[DEBUG] Total allocated size: " << allocatedSize << " bytes" << std::endl;
+    NS_LOG_DEBUG("Total allocated size: " << allocatedSize << " bytes");
     // 更新手动命令的剩余数据大小
     if (hasManualCmd){
         std::lock_guard<std::mutex> lock(m_cmdMutex);
         CarlaTxCommand& cmdToUpdate = dstCmdIt->second.front();
-        std::cout << "[DEBUG] Updated maxDataSize for cmd: (" << cmdToUpdate.maxDataSize << " --> "
-                    << (cmdToUpdate.maxDataSize - int(allocatedSize)) << ") bytes" << std::endl;
+        // std::cout << "[DEBUG] Updated maxDataSize for cmd: (" << cmdToUpdate.maxDataSize << " --> "
+        //             << (cmdToUpdate.maxDataSize - int(allocatedSize)) << ") bytes" << std::endl;
+        NS_LOG_DEBUG("Updated maxDataSize for cmd: (" << cmdToUpdate.maxDataSize << " --> "
+                    << (cmdToUpdate.maxDataSize - int(allocatedSize)) << ") bytes");
         cmdToUpdate.maxDataSize -= int(allocatedSize);
         // 小于 0 则 pop 队列头命令
         if (cmdToUpdate.maxDataSize <= 0) {
-            std::cout << "[DEBUG] maxDataSize <= 0, pop command: srcL2Id=" << cmdToUpdate.srcL2Id<< ", dstL2Id=" << cmdToUpdate.dstL2Id << std::endl;
+            // std::cout << "[DEBUG] maxDataSize <= 0, pop command: srcL2Id=" << cmdToUpdate.srcL2Id<< ", dstL2Id=" << cmdToUpdate.dstL2Id << std::endl;
+            NS_LOG_DEBUG("maxDataSize <= 0, pop command: srcL2Id=" << cmdToUpdate.srcL2Id<< ", dstL2Id=" << cmdToUpdate.dstL2Id);
             dstCmdIt->second.pop();
         }
     }

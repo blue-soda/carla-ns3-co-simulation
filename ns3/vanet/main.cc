@@ -29,6 +29,7 @@
 #include <iostream>
 #include <mutex>
 #include <thread>
+#include <csignal>
 
 using namespace ns3;
 
@@ -335,11 +336,12 @@ void SendMsgToCarla(const std::string &msg) {
   if (send(send_to_carla_fd, msg.c_str(), msg.size(), 0) < 0) {
     std::cerr << "[ERR] send failed, send_to_carla_fd = " << send_to_carla_fd << "\n";
     perror("[ERR] send failed");
+    SocketSenderServerConnect();
   }
 }
 
-
 void SocketSenderServerConnect() {
+  std::cout << "[INFO] Connecting to Carla on port 5557...\n";
   send_to_carla_fd = socket(AF_INET, SOCK_STREAM, 0);
   if (send_to_carla_fd < 0) {
     perror("[ERR] socket failed");
@@ -372,9 +374,10 @@ void SocketSenderServerDisconnect() {
 int main(int argc, char *argv[]) {
 
   // LogComponentEnable("NrSlUeMacSchedulerFixedMcs", LOG_ALL);
-  LogComponentEnable("CamApplication", LOG_ALL);
+  // LogComponentEnable("CamApplication", LOG_ALL);
   // LogComponentEnable("NrSlUeMac", LOG_LEVEL_INFO);
   // LogComponentEnable("NrUeNetDevice", LOG_LEVEL_INFO);
+  signal(SIGPIPE, SIG_IGN);
 
   CommandLine cmd;
   cmd.AddValue("simTime", "Simulation time (s)", simTime);

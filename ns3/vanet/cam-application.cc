@@ -371,7 +371,7 @@ void CamSenderNR::SendCam(uint32_t bytes, Ipv4Address dest_addr,
   // 调用调度器接口，下发指令
   m_scheduler->AddCarlaTxCommand(cmd);
   
-  std::cout << "CarlaTxCommand added to scheduler\n";
+  // std::cout << "CarlaTxCommand added to scheduler\n";
 
   InetSocketAddress destination = InetSocketAddress(dest_addr, m_port);
   m_socket->SendTo(packet, 0, destination);
