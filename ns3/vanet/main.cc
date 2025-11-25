@@ -55,6 +55,7 @@ std::map<int, Vector> latestVelocities;
 std::map<int, std::vector<int>> latestRequests;
 std::unordered_map<int, TransferRequestSubChannel> latestRequestsSubChannel;
 
+std::mutex msgMutex;
 std::mutex dataMutex;
 std::atomic firstDataReceived(false);
 
@@ -322,6 +323,7 @@ void SendSimulationEndSignal() {
 }
 
 void SendMsgToCarla(const std::string &msg) {
+  std::lock_guard<std::mutex> lock(msgMutex);
   std::cout << "[INFO] SendMsgToCarla: " << msg << ", send_to_carla_fd: " << send_to_carla_fd << "\n";
   if(send_to_carla_fd < 0) { //if not connected, try to connect for once
     SocketSenderServerConnect();
@@ -971,7 +973,8 @@ void InitializeVehicles_NR_V2X_Mode2(uint32_t n_vehicles = 3)
         receiver->SetStartTime(slBearersActivationTime);
         receiver->SetStopTime(Seconds(simTime));
         receiver->SetReplyFunction([i](const std::string& msg) {
-          Simulator::Schedule(MilliSeconds(i), [msg] { SendMsgToCarla(msg); });
+          // Simulator::Schedule(MilliSeconds(i), [msg] { SendMsgToCarla(msg); });
+          return SendMsgToCarla(msg);
         });
         receivers.push_back(receiver);
     }
