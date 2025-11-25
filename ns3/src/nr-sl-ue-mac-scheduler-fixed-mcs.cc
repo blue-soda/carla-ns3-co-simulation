@@ -1768,7 +1768,7 @@ NrSlUeMacSchedulerFixedMcs::DoNrSlAllocation(
 
         slotAllocList.emplace(slotAlloc);
     }
-    std::cout << "成功分配 " << slotAllocList.size() << " 个slot资源\n";
+    std::cout << "成功分配 " << slotAllocList.size() << " 个slot资源\n\n";
     return allocated;
 }
 

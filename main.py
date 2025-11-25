@@ -71,6 +71,14 @@ def main():
                         "sc_start": 5,
                         "sc_num": 5,
                         "tx_power": 0.1
+                    },
+                    {
+                        "source": all_vehicles[4].id, 
+                        "target": all_vehicles[5].id, 
+                        "size": 5000,
+                        "sc_start": 10,
+                        "sc_num": 3,
+                        "tx_power": 0.1
                     }
                 ])
                 # bridge.send_transfer_requests([

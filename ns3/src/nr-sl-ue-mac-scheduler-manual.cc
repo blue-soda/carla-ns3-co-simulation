@@ -1,4 +1,4 @@
-#include "nr-sl-ue-mac-scheduler-cluster.h"
+#include "nr-sl-ue-mac-scheduler-manual.h"
 
 #include "nr-sl-ue-mac-harq.h"
 #include "nr-ue-mac.h"
@@ -15,56 +15,41 @@
 namespace ns3
 {
 
-NS_LOG_COMPONENT_DEFINE("NrSlUeMacSchedulerCluster");
-NS_OBJECT_ENSURE_REGISTERED(NrSlUeMacSchedulerCluster);
+NS_LOG_COMPONENT_DEFINE("NrSlUeMacSchedulerManual");
+NS_OBJECT_ENSURE_REGISTERED(NrSlUeMacSchedulerManual);
 // 注册调度器TypeID
 TypeId
-NrSlUeMacSchedulerCluster::GetTypeId(void)
+NrSlUeMacSchedulerManual::GetTypeId(void)
 {
-    static TypeId tid = TypeId("ns3::NrSlUeMacSchedulerCluster")
+    static TypeId tid = TypeId("ns3::NrSlUeMacSchedulerManual")
         .SetParent<NrSlUeMacSchedulerFixedMcs>()
-        .AddConstructor<NrSlUeMacSchedulerCluster>()
-        .AddAttribute("NumChannels", "Number of subchannels (K)",
-                      UintegerValue(10),
-                      MakeUintegerAccessor(&NrSlUeMacSchedulerCluster::m_numChannels),
-                      MakeUintegerChecker<uint8_t>(1, 20))
-        .AddAttribute("SinrThreshold", "SINR threshold for conflict detection",
-                      DoubleValue(6.0), // 6dB约对应MCS 10的解调需求
-                      MakeDoubleAccessor(&NrSlUeMacSchedulerCluster::m_sinrThreshold),
-                      MakeDoubleChecker<double>(0.0, 20.0))
-        .AddAttribute("MaxTxPower", "Maximum transmission power (W)",
-                      DoubleValue(0.1), // 0.1W=20dBm, 符合V2X功率标准
-                      MakeDoubleAccessor(&NrSlUeMacSchedulerCluster::m_maxTxPower),
-                      MakeDoubleChecker<double>(0.01, 1.0))
-        .AddAttribute("NoisePower", "Noise power (W)",
-                      DoubleValue(1e-17), // 简化噪声模型
-                      MakeDoubleAccessor(&NrSlUeMacSchedulerCluster::m_noisePower),
-                      MakeDoubleChecker<double>(1e-19, 1e-15));
+        .AddConstructor<NrSlUeMacSchedulerManual>();
     return tid;
 }
 
 
 // CARLA添加传输指令(线程安全)
 void
-NrSlUeMacSchedulerCluster::AddCarlaTxCommand(const CarlaTxCommand& cmd)
+NrSlUeMacSchedulerManual::AddCarlaTxCommand(const CarlaTxCommand& cmd)
 {
     NS_LOG_FUNCTION(this << cmd.srcL2Id << cmd.dstL2Id << cmd.slSubchannelStart << cmd.slSubchannelSize);
-    std::cout << "[DEBUG] NrSlUeMacSchedulerCluster::AddCarlaTxCommand called\n";
+    std::cout << "[DEBUG] NrSlUeMacSchedulerManual::AddCarlaTxCommand called\n";
     std::lock_guard<std::mutex> lock(m_cmdMutex);
-    m_carlaTxCommands.push(cmd);
+    m_carlaTxCommandsByDst[cmd.dstL2Id].push(cmd);
 }
 
-// 实现: 清空已完成的指令
+// 清空指令
 void
-NrSlUeMacSchedulerCluster::ClearCompletedCommands()
+NrSlUeMacSchedulerManual::ClearCompletedCommands()
 {
     NS_LOG_FUNCTION(this);
     std::lock_guard<std::mutex> lock(m_cmdMutex);
-    m_carlaTxCommands = std::queue<CarlaTxCommand>(); // 清空队列
+    m_carlaTxCommandsByDst.clear();
 }
 
+// 重写逻辑信道优先级调度方法
 uint32_t
-NrSlUeMacSchedulerCluster::LogicalChannelPrioritization(
+NrSlUeMacSchedulerManual::LogicalChannelPrioritization(
     const SfnSf& sfn,
     std::map<uint32_t, std::vector<uint8_t>> dstsAndLcsToSched,
     AllocationInfo& allocationInfo,
@@ -262,6 +247,26 @@ NrSlUeMacSchedulerCluster::LogicalChannelPrioritization(
     uint16_t symbolsPerSlot = 9;
     uint16_t subChannelSize = GetMac()->GetNrSlSubChSize();
     auto rItSelectedLcs = selectedLcs.rbegin();
+
+    CarlaTxCommand manualCmd;
+    bool hasManualCmd = false;
+    std::map<uint32_t, std::queue<CarlaTxCommand>>::iterator dstCmdIt;
+    {
+        std::lock_guard<std::mutex> lock(m_cmdMutex);
+        // 按选中的目标ID查询命令map, 获取对应队列
+        dstCmdIt = m_carlaTxCommandsByDst.find(dstIdSelected);
+        if (dstCmdIt != m_carlaTxCommandsByDst.end() && !dstCmdIt->second.empty())
+        {
+            manualCmd = dstCmdIt->second.front(); // 获取队列头命令
+            uint32_t srcL2Id = GetMac()->GetSrcL2Id();
+            if (manualCmd.srcL2Id == srcL2Id)
+            {
+                std::cout << "[DEBUG] Manual scheduling command matched: srcL2Id=" << manualCmd.srcL2Id 
+                            << ", dstL2Id=" << manualCmd.dstL2Id << ", current maxDataSize=" << manualCmd.maxDataSize << std::endl;
+                hasManualCmd = true;
+            }
+        }
+    }
     while (selectedLcs.size() > 0)
     {
         allocQueue.emplace(rItSelectedLcs->second);
@@ -271,49 +276,24 @@ NrSlUeMacSchedulerCluster::LogicalChannelPrioritization(
             currBufferSize = currBufferSize + lcgMap.begin()->second->GetTotalSizeOfLC(itLc);
             std::cout << "currBufferSize: " << currBufferSize << std::endl;
         }
-        std::cout << std::endl;
         nLcsInQueue = nLcsInQueue + rItSelectedLcs->second.size();
         bufferSize = bufferSize + currBufferSize;
-
-        // ======================================
-        // 手动调度修改：拦截目标收发方，替换为指定子信道
-        // ======================================
-        CarlaTxCommand manualCmd;
-        bool hasManualCmd = false;
-        {
-            // 线程安全读取命令队列，查找目标收发方的手动调度命令
-            std::lock_guard<std::mutex> lock(m_cmdMutex);
-            if (!m_carlaTxCommands.empty())
-            {
-                manualCmd = m_carlaTxCommands.front();
-                // 匹配条件：手动调度开关开启 + 发送方L2ID匹配 + 接收方L2ID匹配
-                uint32_t srcL2Id = GetMac()->GetSrcL2Id(); // 从MAC层获取当前发送方L2ID
-                if (manualCmd.dstL2Id == dstIdSelected && manualCmd.srcL2Id == srcL2Id)
-                {
-                    std::cout << "[DEBUG] Manual scheduling command matched: srcL2Id=" << manualCmd.srcL2Id << std::endl;
-                    hasManualCmd = true;
-                    m_carlaTxCommands.pop(); // 执行后移除命令，避免重复执行
-                }
-            }
-        }
 
         // Calculate number of needed subchannels
         uint16_t lSubch = 0;
         uint32_t tbSize = 0;
         uint32_t totalSubCh = GetTotalSubCh();
         if(hasManualCmd) {
-            uint16_t lSubch = manualCmd.slSubchannelSize;
-            uint32_t tbSize = CalculateTbSize(GetAmc(), dstMcs, symbolsPerSlot, lSubch, subChannelSize);
+            lSubch = manualCmd.slSubchannelSize;
+            tbSize = CalculateTbSize(GetAmc(), dstMcs, symbolsPerSlot, lSubch, subChannelSize);
             std::cout << "hasManualCmd. lSubch: " << lSubch << ", tbSize: " << tbSize << ", GetTotalSubCh: " << totalSubCh << std::endl;
         } else {
-            do
-            {
+            do {
                 lSubch++;
                 tbSize = CalculateTbSize(GetAmc(), dstMcs, symbolsPerSlot, lSubch, subChannelSize);
             } while (tbSize < bufferSize + 5 && lSubch < totalSubCh);
             std::cout << "lSubch: " << lSubch << ", tbSize: " << tbSize << ", GetTotalSubCh: " << totalSubCh << std::endl;
         }
-        // 修改: 设置为手动指定的子信道数
 
         NS_LOG_DEBUG("Trying " << nLcsInQueue << " LCs with total buffer size of " << bufferSize
                                << " bytes in " << lSubch << " subchannels for a TB size of "
@@ -324,20 +304,17 @@ NrSlUeMacSchedulerCluster::LogicalChannelPrioritization(
                                                  lSubch,
                                                  lcgMap.begin()->second->GetLcRri(lcIdOfRef),
                                                  m_cResel};
-        std::list<SlResourceInfo> filteredReso;
-        // 自动资源选择逻辑
-        filteredReso = FilterTxOpportunities(sfn,
+        std::list<SlResourceInfo> filteredReso = FilterTxOpportunities(sfn,
             GetMac()->GetCandidateResources(sfn, params),
             lcgMap.begin()->second->GetLcRri(lcIdOfRef),
             m_cResel);
         std::cout << "filteredReso size: " << filteredReso.size() << std::endl;
-
-        if (filteredReso.size() == 0)
+        if (filteredReso.empty())
         {
             NS_LOG_DEBUG("Resources not found");
             break;
         }
-        // 手动指定子信道资源
+
         if (hasManualCmd)
         {
             NS_LOG_DEBUG("Manual scheduling triggered: srcL2Id=" << manualCmd.srcL2Id 
@@ -348,7 +325,7 @@ NrSlUeMacSchedulerCluster::LogicalChannelPrioritization(
             {
                 std::cerr << "[WARN] Manual subchannel out of range! Total subchannels: " << totalSubCh 
                           << ", requested: " << manualCmd.slSubchannelStart + manualCmd.slSubchannelSize << std::endl;
-                break; // 子信道越界，放弃本次调度
+                break; // 子信道越界, 放弃本次调度
             }
             SlResourceInfo manualRes = *filteredReso.begin(); // 复制第一个资源作为模板
             filteredReso.clear(); // 清空原有资源列表
@@ -360,14 +337,10 @@ NrSlUeMacSchedulerCluster::LogicalChannelPrioritization(
                                                                     << ", slSubchannelLength=" << +manualRes.slSubchannelLength
                                                                     << ", PSSCH symbols=" << manualRes.slPsschSymLength);
         }
-        // ======================================
-        // 手动调度修改结束（修复完成）
-        // ======================================
-        {
-            NS_LOG_DEBUG("Resources found");
-            candResoTbSize = tbSize;
-            candResources = filteredReso;
-        }
+
+        NS_LOG_DEBUG("Resources found");
+        candResoTbSize = tbSize;
+        candResources = filteredReso;
         rItSelectedLcs = std::reverse_iterator(selectedLcs.erase(--rItSelectedLcs.base()));
     }
     if (candResources.size() == 0)
@@ -421,6 +394,20 @@ NrSlUeMacSchedulerCluster::LogicalChannelPrioritization(
         allocQueue.pop();
     }
 
+    std::cout << "[DEBUG] Total allocated size: " << allocatedSize << " bytes" << std::endl;
+    // 更新手动命令的剩余数据大小
+    if (hasManualCmd){
+        std::lock_guard<std::mutex> lock(m_cmdMutex);
+        CarlaTxCommand& cmdToUpdate = dstCmdIt->second.front();
+        std::cout << "[DEBUG] Updated maxDataSize for cmd: (" << cmdToUpdate.maxDataSize << " --> "
+                    << (cmdToUpdate.maxDataSize - int(allocatedSize)) << ") bytes" << std::endl;
+        cmdToUpdate.maxDataSize -= int(allocatedSize);
+        // 小于 0 则 pop 队列头命令
+        if (cmdToUpdate.maxDataSize <= 0) {
+            std::cout << "[DEBUG] maxDataSize <= 0, pop command: srcL2Id=" << cmdToUpdate.srcL2Id<< ", dstL2Id=" << cmdToUpdate.dstL2Id << std::endl;
+            dstCmdIt->second.pop();
+        }
+    }
     return dstIdSelected;
 }
 

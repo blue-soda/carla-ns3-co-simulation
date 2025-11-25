@@ -369,7 +369,6 @@ void SocketSenderServerDisconnect() {
 
 int main(int argc, char *argv[]) {
 
-  // LogComponentEnable("NrSlUeMacSchedulerCluster", LOG_ALL);
   // LogComponentEnable("NrSlUeMacSchedulerFixedMcs", LOG_ALL);
   LogComponentEnable("CamApplication", LOG_ALL);
   // LogComponentEnable("NrSlUeMac", LOG_LEVEL_INFO);
@@ -743,7 +742,7 @@ void InitializeVehicles_NR_V2X_Mode2(uint32_t n_vehicles = 3)
      * a fixed MCS value
      */
     // nrSlHelper->SetNrSlSchedulerTypeId(NrSlUeMacSchedulerFixedMcs::GetTypeId());
-    nrSlHelper->SetNrSlSchedulerTypeId(ns3::NrSlUeMacSchedulerCluster::GetTypeId());
+    nrSlHelper->SetNrSlSchedulerTypeId(ns3::NrSlUeMacSchedulerManual::GetTypeId());
 
     // nrSlHelper->SetUeSlSchedulerAttribute("Mcs", UintegerValue(14));
     nrSlHelper->SetUeSlSchedulerAttribute("Mcs", UintegerValue(20));
@@ -905,7 +904,6 @@ void InitializeVehicles_NR_V2X_Mode2(uint32_t n_vehicles = 3)
             ipv4RoutingHelper.GetStaticRouting(ueNode->GetObject<Ipv4>());
         ueStaticRouting->SetDefaultRoute(epcHelper->GetUeDefaultGatewayAddress(), 1);
     }
-
 
     Ipv4Address groupAddress4("225.0.0.0"); // use multicast address as destination
     SidelinkInfo slInfo;

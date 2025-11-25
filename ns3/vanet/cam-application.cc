@@ -337,9 +337,8 @@ void CamSenderNR::SendCam(uint32_t bytes, Ipv4Address dest_addr,
 {
   NS_LOG_FUNCTION(this << bytes << dest_addr << (uint32_t)sc_start << (uint32_t)sc_num << tx_power << dest_L2Id);
   
-  // 创建 Packet（与原有逻辑一致）
   Ptr<Packet> packet = Create<Packet>(bytes);
-  // 添加 CAM 头部（与原有逻辑一致）
+
   Ptr<MobilityModel> mobility = GetNode()->GetObject<MobilityModel>();
   Vector pos = mobility->GetPosition();
   Vector vel = mobility->GetVelocity();
@@ -360,15 +359,14 @@ void CamSenderNR::SendCam(uint32_t bytes, Ipv4Address dest_addr,
   uint32_t srcL2Id = src_L2Id; // 使用传入的发送方 L2 ID
   uint32_t dstL2Id = dest_L2Id; // 使用传入的接收方 L2 ID
 
-  // 构建 CARLA 传输指令（与第一步定义的 CarlaTxCommand 对齐）
+  // 构建 CARLA 传输指令
   CarlaTxCommand cmd;
   cmd.srcL2Id = srcL2Id;
   cmd.dstL2Id = dstL2Id;
-  // cmd.dataSize = packet->GetSize(); // 包含头部的总数据大小
+  cmd.maxDataSize = (int)packet->GetSize() + 35; // 包含头部的总数据大小
   cmd.slSubchannelStart = sc_start;
   cmd.slSubchannelSize = sc_num;
   // cmd.txPower = tx_power;
-  // cmd.linkType = LinkType::CLUSTER_INTERNAL; // 根据实际链路类型设置（簇内/簇间）
 
   // 调用调度器接口，下发指令
   m_scheduler->AddCarlaTxCommand(cmd);
@@ -383,8 +381,7 @@ void CamSenderNR::SendCam(uint32_t bytes, Ipv4Address dest_addr,
               << ", size=" << packet->GetSize() << " bytes\n";
 }
 
-// 辅助函数：获取调度器实例（从 Node 的 NetDevice 中提取）
-Ptr<NrSlUeMacSchedulerCluster> CamSenderNR::GetScheduler()
+Ptr<NrSlUeMacSchedulerManual> CamSenderNR::GetScheduler()
 {
   Ptr<NrUeNetDevice> ueNetDev = nullptr;
   for (uint32_t i = 0; i < m_node->GetNDevices(); ++i)
@@ -401,7 +398,7 @@ Ptr<NrSlUeMacSchedulerCluster> CamSenderNR::GetScheduler()
     std::cerr << "CamSenderNR: failed to get NrSlUeMac from NrUeNetDevice" << std::endl;
     return nullptr;
   }
-  return slMac->GetScheduler()->GetObject<NrSlUeMacSchedulerCluster>();
+  return slMac->GetScheduler()->GetObject<NrSlUeMacSchedulerManual>();
 }
 
 // ==================== CamReceiverNR ====================
@@ -419,7 +416,6 @@ void CamReceiverNR::StartApplication() {
     m_socket = Socket::CreateSocket(GetNode(), UdpSocketFactory::GetTypeId());
     InetSocketAddress local = InetSocketAddress(Ipv4Address::GetAny(), m_port);
     m_socket->Bind(local);
-    // NR-V2X多播的话，可以在这里加 JoinMulticastGroup，但ns-3里IPv4多播只要目标是多播地址，稍后会自动处理
   }
   m_socket->SetRecvCallback(MakeCallback(&CamReceiverNR::HandleRead, this));
 }
@@ -432,7 +428,7 @@ void CamReceiverNR::StopApplication() {
 }
 
 void CamReceiverNR::HandleRead(Ptr<Socket> socket) {
-    std::cout << "amReceiverNR::HandleRead\n";
+    std::cout << "CamReceiverNR::HandleRead\n";
     Ptr<Packet> packet;
     Address from;
     while ((packet = socket->RecvFrom(from))) {

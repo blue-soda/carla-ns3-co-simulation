@@ -29,14 +29,6 @@ public:
     virtual void ScheduleCam(uint32_t bytes, Ipv4Address dest_addr);
     virtual void SendCam(uint32_t bytes, Ipv4Address dest_addr);
     bool IsRunning();
-    struct TxMeta {
-        uint8_t rb_start;
-        uint8_t sc_num;
-        double tx_power;
-    };
-    std::unordered_map<Ptr<Packet>, TxMeta> m_packetTxMeta; // Packet → 传输元信息
-    // 获取调度器实例（从 Node 的 NetDevice 中提取）
-    Ptr<NrSlUeMacSchedulerCluster> GetScheduler();
 
 protected:
     // Application lifecycle hooks (to be overridden)
@@ -108,8 +100,8 @@ public:
                                uint8_t sc_start, uint8_t sc_num, double tx_power, uint32_t src_L2Id, uint32_t dest_L2Id);
     void SendCam(uint32_t bytes, Ipv4Address dest_addr, 
                                 uint8_t sc_start, uint8_t sc_num, double tx_power, uint32_t src_L2Id, uint32_t dest_L2Id);
-    Ptr<NrSlUeMacSchedulerCluster> GetScheduler();
-    Ptr<NrSlUeMacSchedulerCluster> m_scheduler = nullptr;
+    Ptr<NrSlUeMacSchedulerManual> GetScheduler();
+    Ptr<NrSlUeMacSchedulerManual> m_scheduler = nullptr;
 };
 class CamReceiverNR : public CamReceiver {
 public:
