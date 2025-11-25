@@ -278,7 +278,7 @@ void CamSenderNR::StartApplication() {
 void CamSenderNR::SendCam(uint32_t bytes, Ipv4Address dest_addr)
 {
     // bytes = 1000;
-    std::cout << "CamSenderNR::SendCam(uint32_t bytes, Ipv4Address dest_addr)\n";
+    // std::cout << "CamSenderNR::SendCam(uint32_t bytes, Ipv4Address dest_addr)\n";
     NS_ASSERT(m_running);
     NS_ASSERT(m_socket);
     Ptr<MobilityModel> mobility = GetNode()->GetObject<MobilityModel>();
@@ -301,7 +301,7 @@ void CamSenderNR::SendCam(uint32_t bytes, Ipv4Address dest_addr)
     camHeader.SetTimestamp(Simulator::Now().GetMilliSeconds());
     packet->AddHeader(camHeader);
 
-    std::cout << "Addheader\n";
+    // std::cout << "Addheader\n";
 
     m_socket->SendTo(packet, 0, destination);
 
