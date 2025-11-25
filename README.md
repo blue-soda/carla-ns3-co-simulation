@@ -43,7 +43,7 @@ After installing and verifying CARLA, you can proceed to set up the co-simulatio
 1.  **Clone the CARLA-NS3-co-simulation repository:**
 
     ```bash
-    git clone git@github.com:TechOctopus/carla-ns3-co-simulation.git
+    git clone https://github.com/blue-soda/carla-ns3-co-simulation.git
     ```
 
 2.  **Navigate into the project directory:**
