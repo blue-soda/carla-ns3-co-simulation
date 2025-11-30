@@ -287,6 +287,7 @@ NrSlUeMacSchedulerManual::LogicalChannelPrioritization(
         uint16_t lSubch = 0;
         uint32_t tbSize = 0;
         uint32_t totalSubCh = GetTotalSubCh();
+        // std::cout << "totalSubCh: " << totalSubCh << std::endl;
         if(hasManualCmd) {
             lSubch = manualCmd.slSubchannelSize;
             tbSize = CalculateTbSize(GetAmc(), dstMcs, symbolsPerSlot, lSubch, subChannelSize);

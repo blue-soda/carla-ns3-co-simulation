@@ -12,7 +12,7 @@ void ProcessReceivedData(std::string &receive_buffer);
 void SocketServerThread();
 void UpdateVehiclePositions();
 void SendSimulationEndSignal();
-void SendMsgToCarla(const std::string &msg);
+void SendMsgToCarla(const std::string &msg, bool try_reconnect);
 void SocketSenderServerConnect();
 void SocketSenderServerDisconnect();
 

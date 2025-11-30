@@ -320,20 +320,21 @@ void UpdateVehiclePositions() {
 
 void SendSimulationEndSignal() {
   std::string msg = R"({"type": "simulation_end"})";
-  SendMsgToCarla(msg);
+  SendMsgToCarla(msg, false);
 }
 
-void SendMsgToCarla(const std::string &msg) {
+void SendMsgToCarla(const std::string &msg, bool try_reconnect = true) {
   std::lock_guard<std::mutex> lock(msgMutex);
+  std::string msg_with_delimiter = msg + "\n\r";
   std::cout << "[INFO] SendMsgToCarla: " << msg << ", send_to_carla_fd: " << send_to_carla_fd << "\n";
-  if(send_to_carla_fd < 0) { //if not connected, try to connect for once
+  if(send_to_carla_fd < 0 && try_reconnect) { //if not connected, try to connect for once
     SocketSenderServerConnect();
     if(send_to_carla_fd < 0) {
       std::cerr << "[ERR] send_to_carla_fd is not connected\n";
       return;
     }
   }
-  if (send(send_to_carla_fd, msg.c_str(), msg.size(), 0) < 0) {
+  if (send(send_to_carla_fd, msg_with_delimiter.c_str(), msg_with_delimiter.size(), 0) < 0 && try_reconnect) {
     std::cerr << "[ERR] send failed, send_to_carla_fd = " << send_to_carla_fd << "\n";
     perror("[ERR] send failed");
     SocketSenderServerConnect();
@@ -341,6 +342,12 @@ void SendMsgToCarla(const std::string &msg) {
 }
 
 void SocketSenderServerConnect() {
+  if (send_to_carla_fd >= 0) {
+      close(send_to_carla_fd);
+      send_to_carla_fd = -1;
+      std::cout << "[INFO] Previous connection to Carla closed.\n";
+  }
+
   std::cout << "[INFO] Connecting to Carla on port 5557...\n";
   send_to_carla_fd = socket(AF_INET, SOCK_STREAM, 0);
   if (send_to_carla_fd < 0) {
@@ -370,6 +377,12 @@ void SocketSenderServerDisconnect() {
   }
 }
 
+void HandleSigInt(int signum) {
+    std::cout << "\n[INFO] Received SIGINT (Ctrl+C), exiting gracefully...\n";
+    Simulator::Stop();
+    running = false;
+    SocketSenderServerDisconnect();
+}
 
 int main(int argc, char *argv[]) {
 
@@ -378,6 +391,7 @@ int main(int argc, char *argv[]) {
   // LogComponentEnable("NrSlUeMac", LOG_LEVEL_INFO);
   // LogComponentEnable("NrUeNetDevice", LOG_LEVEL_INFO);
   signal(SIGPIPE, SIG_IGN);
+  signal(SIGINT, HandleSigInt);
 
   CommandLine cmd;
   cmd.AddValue("simTime", "Simulation time (s)", simTime);
@@ -562,10 +576,11 @@ void InitializeVehicles_NR_V2X_Mode2(uint32_t n_vehicles = 3)
     uint16_t numerologyBwpSl = 2;
     double centralFrequencyBandSl = 5.89e9; // band n47  TDD //Here band is analogous to channel
     // uint16_t bandwidthBandSl = 400;         // Multiple of 100 KHz; 400 = 40 MHz
-    uint16_t bandwidthBandSl = 1000;
+    uint16_t bandwidthBandSl = 720 + 40;
     double txPower = 23;                    // dBm
     uint16_t SlSubchannelSize = 10;
-    totalSubChannel = ((bandwidthBandSl * 100) / 180) / SlSubchannelSize;
+    totalSubChannel = floor( (bandwidthBandSl * 100) / (15 * pow(2, numerologyBwpSl) * 12) / SlSubchannelSize );
+    std::cout << "[INFO] NR V2X Mode 2: totalSubChannel = " << totalSubChannel << "\n";
     /*
      * Setup the NR module. We create the various helpers needed for the
      * NR simulation:
@@ -623,6 +638,12 @@ void InitializeVehicles_NR_V2X_Mode2(uint32_t n_vehicles = 3)
     nrHelper->InitializeOperationBand(&bandSl);
     allBwps = CcBwpCreator::GetAllBwps({bandSl});
 
+    std::cout << "实际带宽配置：" << bandSl.m_channelBandwidth << " Hz" << std::endl;
+    std::cout << "OperationBand频率：" << bandSl.m_centralFrequency << " Hz, (" <<  bandSl.m_lowerFrequency << " - " << bandSl.m_higherFrequency << ")" << std::endl;
+      for (const auto& bwp : allBwps) {
+        std::unique_ptr<ns3::BandwidthPartInfo>& bwpPtr = bwp.get();
+        std::cout << "频率" << bwpPtr->m_centralFrequency << " Hz, (" <<  bwpPtr->m_lowerFrequency << " - " << bwpPtr->m_higherFrequency << ")" << std::endl;
+      } 
     /*
      * allBwps contains all the spectrum configuration needed for the nrHelper.
      *
