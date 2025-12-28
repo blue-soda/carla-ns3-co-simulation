@@ -98,6 +98,7 @@ void ProcessData_VehiclePosition(const json& vehicleArray) {
     // }
   }
   indexBindToCarlaId = true;
+  std::cout << "[INFO] Received Vehicle Position Msg at " << std::to_string(Simulator::Now().GetMilliSeconds()) << std::endl;
 }
 
 void ProcessData_TransferRequests(const json &requests) {
@@ -139,7 +140,7 @@ void ProcessData_TransferRequests(const json &requests) {
       if(senders[source_index]->IsRunning()) {
         if(contains_rb) {
           TransferRequestSubChannel sc_req = latestRequestsSubChannel[source];
-          std::cout << "[INFO] sender index: " << source_index << " id: " << source << " sending " << sc_req.size << " bytes to " << target_index << " id: " << target << "subChannel_start: " << (uint32_t)sc_req.start << " num: " << (uint32_t)sc_req.num << " tx_power: " << sc_req.tx_power << " W\n";
+          std::cout << "[INFO] sender index: " << source_index << " id: " << source << " sending " << sc_req.size << " bytes to " << target_index << " id: " << target << " subChannel_start: " << (uint32_t)sc_req.start << " num: " << (uint32_t)sc_req.num << " tx_power: " << sc_req.tx_power << " W\n";
           CamSenderNR *sender_nr = GetPointer(DynamicCast<CamSenderNR>(senders[source_index]));
           sender_nr->ScheduleCam((uint32_t)sc_req.size, vehicleIps[target_index], sc_req.start, sc_req.num, sc_req.tx_power, vehicleL2Ids[source_index] , vehicleL2Ids[target_index]);
         } else {
@@ -150,6 +151,7 @@ void ProcessData_TransferRequests(const json &requests) {
       }
     }
   }
+  std::cout << "[INFO] Received Transfer Request Msg at " << std::to_string(Simulator::Now().GetMilliSeconds()) << std::endl;
 }
 
 void ProcessData_VehiclesNum(const int &num) {
@@ -448,7 +450,7 @@ void InitializeVehicles_DSRC(uint32_t n_vehicles = 3){
   wifiMac.SetType("ns3::AdhocWifiMac");
 
   NetDeviceContainer devices = wifi.Install(wifiPhy, wifiMac, vehicles);
-  wifiPhy.EnablePcap("../../temp/carla-vanet", devices);
+  // wifiPhy.EnablePcap("../../temp/carla-vanet", devices);
 
   // std::cout << "[INFO] Installing PacketSocket\n";
   // PacketSocketHelper packetSocketHelper;
@@ -809,7 +811,7 @@ void InitializeVehicles_NR_V2X_Mode2(uint32_t n_vehicles = 3)
     // ptrFactory->SetSlMaxNumPerReserve(3);
     ptrFactory->SetSlMaxNumPerReserve(1);
     // std::list<uint16_t> resourceReservePeriodList = {0, 100}; // in ms
-    std::list<uint16_t> resourceReservePeriodList = {0, 10, 20, 50, 100}; 
+    std::list<uint16_t> resourceReservePeriodList = {0}; //, 10, 20, 50, 100}; 
     ptrFactory->SetSlResourceReservePeriodList(resourceReservePeriodList);
     // Once parameters are configured, we can create the pool
     LteRrcSap::SlResourcePoolNr pool = ptrFactory->CreatePool();

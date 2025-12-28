@@ -117,16 +117,10 @@ To run the CARLA-NS3 co-simulation, you need to follow these steps in order:
     ./CarlaUE4.sh
     ```
 
-2.  **Start NS3 VANET Simulation:**
-
-    - Open a new terminal and navigate to the ns-3 directory in the main project directory:
-    ```bash
-    cd ns-allinone-3.44/ns-3.44
-    ```
-    
+2.  **Start NS3 VANET Simulation:**    
     - Run the VANET simulation with desired parameters:
     ```bash
-     ./ns3 run scratch/vanet/main.cc -- --simTime=300.0
+    ns-3-dev/ns3 run scratch/vanet/main.cc -- --simTime=100.0
     ```
     
     Parameters:
