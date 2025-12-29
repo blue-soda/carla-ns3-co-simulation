@@ -140,11 +140,11 @@ void ProcessData_TransferRequests(const json &requests) {
       if(senders[source_index]->IsRunning()) {
         if(contains_rb) {
           TransferRequestSubChannel sc_req = latestRequestsSubChannel[source];
-          std::cout << "[INFO] sender index: " << source_index << " id: " << source << " sending " << sc_req.size << " bytes to " << target_index << " id: " << target << " subChannel_start: " << (uint32_t)sc_req.start << " num: " << (uint32_t)sc_req.num << " tx_power: " << sc_req.tx_power << " W\n";
+          std::cout << "[INFO] sender id: " << source << " sending " << sc_req.size << " bytes to id: " << target << " subChannel_start: " << (uint32_t)sc_req.start << " num: " << (uint32_t)sc_req.num << " tx_power: " << sc_req.tx_power << " W\n";
           CamSenderNR *sender_nr = GetPointer(DynamicCast<CamSenderNR>(senders[source_index]));
           sender_nr->ScheduleCam((uint32_t)sc_req.size, vehicleIps[target_index], sc_req.start, sc_req.num, sc_req.tx_power, vehicleL2Ids[source_index] , vehicleL2Ids[target_index]);
         } else {
-          std::cout << "[INFO] sender index: " << source_index << " id: " << source << " sending " << size << " bytes\n";
+          std::cout << "[INFO] sender id: " << source << " sending " << size << " bytes\n";
           // 对于没有指定子信道的情况，仍然使用原有接口
           senders[source_index]->ScheduleCam((uint32_t)size, vehicleIps[target_index]);
         }
@@ -327,7 +327,7 @@ void SendSimulationEndSignal() {
 
 void SendMsgToCarla(const std::string &msg, bool try_reconnect = true) {
   std::lock_guard<std::mutex> lock(msgMutex);
-  std::string msg_with_delimiter = msg + "\n\r";
+  std::string msg_with_delimiter = msg + "\r\n";
   std::cout << "[INFO] SendMsgToCarla: " << msg << ", send_to_carla_fd: " << send_to_carla_fd << "\n";
   if(send_to_carla_fd < 0 && try_reconnect) { //if not connected, try to connect for once
     SocketSenderServerConnect();

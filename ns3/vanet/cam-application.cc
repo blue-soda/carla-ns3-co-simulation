@@ -240,7 +240,10 @@ void CamReceiverDSRC::HandleRead(Ptr<Socket> socket) {
                                 R"(,"packet_size":)" + std::to_string(packetSize) +
                                 R"(,"is_last_packet":)" + std::to_string(true) + 
                                 R"(})";
-              m_replyFunction(msg);
+              // m_replyFunction(msg);
+                Simulator::ScheduleNow([this, msg]() {
+                    m_replyFunction(msg);
+                });
             }
           } catch(std::exception &e){ 
             NS_LOG_ERROR("CamReceiver::HandleRead m_replyFunction error: " << e.what());
@@ -460,7 +463,11 @@ void CamReceiverNR::HandleRead(Ptr<Socket> socket) {
                                   R"(,"packet_size":)" + std::to_string(packetSize) +
                                   R"(,"is_last_packet":)" + std::to_string(true) +
                                   R"(})";
-                m_replyFunction(msg);
+                // m_replyFunction(msg);
+                // 异步调度发送，避免阻塞HandleRead
+                Simulator::ScheduleNow([this, msg]() {
+                    m_replyFunction(msg);
+                });
             }
         } catch (std::exception& e) {
             NS_LOG_ERROR("CamReceiverNR::HandleRead m_replyFunction error: " << e.what());
