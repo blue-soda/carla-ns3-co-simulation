@@ -575,10 +575,11 @@ void InitializeVehicles_NR_V2X_Mode2(uint32_t n_vehicles = 3)
 
     // NR parameters. We will take the input from the command line, and then we
     // will pass them inside the NR module.
-    uint16_t numerologyBwpSl = 2;
+    uint16_t numerologyBwpSl = 1;
     double centralFrequencyBandSl = 5.89e9; // band n47  TDD //Here band is analogous to channel
     // uint16_t bandwidthBandSl = 400;         // Multiple of 100 KHz; 400 = 40 MHz
-    uint16_t bandwidthBandSl = 720 + 40;
+    // uint16_t bandwidthBandSl = 720 + 40;
+    uint16_t bandwidthBandSl = 400;
     double txPower = 23;                    // dBm
     uint16_t SlSubchannelSize = 10;
     totalSubChannel = floor( (bandwidthBandSl * 100) / (15 * pow(2, numerologyBwpSl) * 12) / SlSubchannelSize );
