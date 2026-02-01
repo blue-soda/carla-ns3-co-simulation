@@ -631,7 +631,7 @@ void InitializeVehicles_NR_V2X_Mode2(uint32_t n_vehicles = 3)
      */
     Config::SetDefault("ns3::ThreeGppChannelModel::UpdatePeriod", TimeValue(MilliSeconds(100)));
     nrHelper->SetChannelConditionModelAttribute("UpdatePeriod", TimeValue(MilliSeconds(0)));
-    nrHelper->SetPathlossAttribute("ShadowingEnabled", BooleanValue(false));
+    nrHelper->SetPathlossAttribute("ShadowingEnabled", BooleanValue(true));
     /*
      * Initialize channel and pathloss, plus other things inside bandSl. If needed,
      * the band configuration can be done manually, but we leave it for more
