@@ -11,9 +11,86 @@
 
 #include <algorithm>
 #include <cmath>
+#include <vector>
 
 namespace ns3
 {
+
+namespace
+{
+
+struct ManualResourceSelection
+{
+    bool found{false};
+    uint8_t logicalCount{0};
+    uint8_t resolvedLogicalIndex{0};
+    std::vector<SlResourceInfo> resources;
+};
+
+ManualResourceSelection
+SelectManualResource(const std::list<SlResourceInfo>& filteredReso, uint8_t logicalIndex)
+{
+    ManualResourceSelection selection;
+    if (filteredReso.empty())
+    {
+        return selection;
+    }
+
+    auto earliestSfn = filteredReso.begin()->sfn;
+    for (const auto& resource : filteredReso)
+    {
+        if (resource.sfn < earliestSfn)
+        {
+            earliestSfn = resource.sfn;
+        }
+    }
+
+    std::vector<SlResourceInfo> sameSlotResources;
+    for (const auto& resource : filteredReso)
+    {
+        if (resource.sfn == earliestSfn)
+        {
+            sameSlotResources.push_back(resource);
+        }
+    }
+
+    std::sort(sameSlotResources.begin(),
+              sameSlotResources.end(),
+              [](const SlResourceInfo& lhs, const SlResourceInfo& rhs) {
+                  if (lhs.slSubchannelStart != rhs.slSubchannelStart)
+                  {
+                      return lhs.slSubchannelStart < rhs.slSubchannelStart;
+                  }
+                  if (lhs.slSubchannelLength != rhs.slSubchannelLength)
+                  {
+                      return lhs.slSubchannelLength < rhs.slSubchannelLength;
+                  }
+                  return lhs.sfn < rhs.sfn;
+              });
+
+    sameSlotResources.erase(
+        std::unique(sameSlotResources.begin(),
+                    sameSlotResources.end(),
+                    [](const SlResourceInfo& lhs, const SlResourceInfo& rhs) {
+                        return lhs.sfn == rhs.sfn &&
+                               lhs.slSubchannelStart == rhs.slSubchannelStart &&
+                               lhs.slSubchannelLength == rhs.slSubchannelLength;
+                    }),
+        sameSlotResources.end());
+
+    if (sameSlotResources.empty())
+    {
+        return selection;
+    }
+
+    selection.logicalCount = static_cast<uint8_t>(sameSlotResources.size());
+    selection.resolvedLogicalIndex = logicalIndex % selection.logicalCount;
+    selection.resources.push_back(sameSlotResources.at(selection.resolvedLogicalIndex));
+    selection.found = true;
+    return selection;
+}
+
+} // namespace
 
 NS_LOG_COMPONENT_DEFINE("NrSlUeMacSchedulerManual");
 NS_OBJECT_ENSURE_REGISTERED(NrSlUeMacSchedulerManual);
@@ -340,23 +417,49 @@ NrSlUeMacSchedulerManual::LogicalChannelPrioritization(
         {
             NS_LOG_DEBUG("Manual scheduling triggered: srcL2Id=" << manualCmd.srcL2Id 
                                                             << ", dstL2Id=" << manualCmd.dstL2Id
-                                                            << ", subchannel[" << manualCmd.slSubchannelStart 
-                                                            << "-" << manualCmd.slSubchannelStart + manualCmd.slSubchannelSize - 1 << "]");
-            if (manualCmd.slSubchannelStart + manualCmd.slSubchannelSize > totalSubCh)
+                                                            << ", logicalSubchannel=" << +manualCmd.slSubchannelStart
+                                                            << ", width=" << +manualCmd.slSubchannelSize);
+            if (manualCmd.slSubchannelSize > totalSubCh)
             {
-                std::cerr << "[WARN] Manual subchannel out of range! Total subchannels: " << totalSubCh 
-                          << ", requested: " << manualCmd.slSubchannelStart + manualCmd.slSubchannelSize << std::endl;
-                break; // 子信道越界, 放弃本次调度
+                std::cerr << "[WARN] Manual subchannel width out of range! Total subchannels: "
+                          << totalSubCh << ", requested width: " << +manualCmd.slSubchannelSize
+                          << std::endl;
+                break;
             }
-            SlResourceInfo manualRes = *filteredReso.begin(); // 复制第一个资源作为模板
-            filteredReso.clear(); // 清空原有资源列表
-            manualRes.slSubchannelStart = manualCmd.slSubchannelStart;
-            manualRes.slSubchannelLength = manualCmd.slSubchannelSize;
-            filteredReso.push_back(manualRes); // 添加手动资源
+            const auto manualSelection =
+                SelectManualResource(filteredReso, manualCmd.slSubchannelStart);
+            if (!manualSelection.found)
+            {
+                std::cerr << "[WARN] No eligible physical resource found for logical subchannel "
+                          << +manualCmd.slSubchannelStart << std::endl;
+                break;
+            }
 
-            NS_LOG_DEBUG("Manual resource configured: slSubchannelStart=" << +manualRes.slSubchannelStart
-                                                                    << ", slSubchannelLength=" << +manualRes.slSubchannelLength
-                                                                    << ", PSSCH symbols=" << manualRes.slPsschSymLength);
+            if (manualCmd.slSubchannelStart >= manualSelection.logicalCount)
+            {
+                std::cout << "[MANUAL_LOGICAL_WRAP] requested=" << +manualCmd.slSubchannelStart
+                          << " available=" << +manualSelection.logicalCount
+                          << " resolved=" << +manualSelection.resolvedLogicalIndex << std::endl;
+            }
+
+            filteredReso.clear();
+            filteredReso.push_back(manualSelection.resources.front());
+
+            std::cout << "[MANUAL_LOGICAL_MAP] src=" << manualCmd.srcL2Id
+                      << " dst=" << manualCmd.dstL2Id
+                      << " logical=" << +manualCmd.slSubchannelStart
+                      << "/" << +manualSelection.logicalCount
+                      << " resolved=" << +manualSelection.resolvedLogicalIndex
+                      << " physicalStart=" << +manualSelection.resources.front().slSubchannelStart
+                      << " physicalLen=" << +manualSelection.resources.front().slSubchannelLength
+                      << " sfn=" << manualSelection.resources.front().sfn.Normalize()
+                      << std::endl;
+
+            NS_LOG_DEBUG("Manual resource configured from logical subchannel "
+                         << +manualCmd.slSubchannelStart << " -> physical start "
+                         << +manualSelection.resources.front().slSubchannelStart << " length "
+                         << +manualSelection.resources.front().slSubchannelLength << " among "
+                         << +manualSelection.logicalCount << " eligible resources");
         }
 
         NS_LOG_DEBUG("Resources found");
