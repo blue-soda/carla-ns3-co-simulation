@@ -30,6 +30,27 @@
 namespace ns3
 {
 
+namespace
+{
+
+std::vector<int>
+CollectActiveRbBitmap(const Ptr<const SpectrumValue>& psd)
+{
+    std::vector<int> rbMap;
+    int rbIndex = 0;
+    for (Values::const_iterator it = psd->ConstValuesBegin(); it != psd->ConstValuesEnd();
+         ++it, ++rbIndex)
+    {
+        if (*it != 0)
+        {
+            rbMap.push_back(rbIndex);
+        }
+    }
+    return rbMap;
+}
+
+} // namespace
+
 NS_LOG_COMPONENT_DEFINE("NrSpectrumPhy");
 NS_OBJECT_ENSURE_REGISTERED(NrSpectrumPhy);
 
@@ -1913,6 +1934,7 @@ NrSpectrumPhy::StartTxSlCtrlFrames(const Ptr<PacketBurst>& pb, Time duration)
         txParams->psd = m_txPsd;
         txParams->nodeId = GetDevice()->GetNode()->GetId();
         txParams->packetBurst = pb;
+        txParams->txRbBitmap = CollectActiveRbBitmap(m_txPsd);
 
         m_txCtrlTrace(duration);
 
@@ -1995,6 +2017,7 @@ NrSpectrumPhy::StartTxSlFeedback(const std::list<Ptr<NrSlHarqFeedbackMessage>>& 
         txParams->psd = m_txPsd;
         txParams->nodeId = GetDevice()->GetNode()->GetId();
         txParams->feedbackList = feedbackList;
+        txParams->txRbBitmap = CollectActiveRbBitmap(m_txPsd);
 
         m_txFeedbackTrace(duration);
 
@@ -2048,6 +2071,7 @@ NrSpectrumPhy::StartTxSlDataFrames(const Ptr<PacketBurst>& pb, Time duration)
         txParams->psd = m_txPsd;
         txParams->nodeId = GetDevice()->GetNode()->GetId();
         txParams->packetBurst = pb;
+        txParams->txRbBitmap = CollectActiveRbBitmap(m_txPsd);
 
         m_txDataTrace(duration);
 
@@ -2130,16 +2154,17 @@ NrSpectrumPhy::StartRxSlFrame(Ptr<NrSpectrumSignalParametersSlFrame> params)
         // keeping track of all the received signal, which received
         // at the same time.
         std::vector<int> rbMap;
-        int rbI = 0;
-        for (Values::const_iterator it = params->psd->ConstValuesBegin();
-             it != params->psd->ConstValuesEnd();
-             it++, rbI++)
+        if (!params->txRbBitmap.empty())
         {
-            if (*it != 0)
-            {
-                NS_LOG_INFO("NR Sidelink message arriving on RB " << rbI);
-                rbMap.push_back(rbI);
-            }
+            rbMap = params->txRbBitmap;
+        }
+        else
+        {
+            rbMap = CollectActiveRbBitmap(params->psd);
+        }
+        for (const auto& rb : rbMap)
+        {
+            NS_LOG_INFO("NR Sidelink message arriving on RB " << rb);
         }
         SlRxSigParamInfo signalInfo;
         signalInfo.params = params;
@@ -2315,7 +2340,9 @@ NrSpectrumPhy::RxSlPscch(std::vector<uint32_t> paramIndexes)
                 {
                     NS_LOG_DEBUG(*rbIt << " TB with the similar RB has already been decoded. Avoid "
                                           "to decode it again!");
+                    corrupt = true;
                     corruptDecodedOverlap = true;
+                    break;
                 }
             }
 

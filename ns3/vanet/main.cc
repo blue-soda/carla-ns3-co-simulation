@@ -62,7 +62,7 @@ std::mutex dataMutex;
 std::atomic firstDataReceived(false);
 
 Ptr<NrSlHelper> NazonoNrSlHelper; //deletion of this var will cause Signals.SIGABRT: 6
-bool running = true;
+std::atomic<bool> running{true};
 int send_to_carla_fd = -1;
 int totalSubChannel = 0;
 
@@ -75,6 +75,9 @@ std::condition_variable syncCv;
 bool enableTimeSyncFlag = true;  // Use regular bool for command line parsing
 std::atomic<bool> enableTimeSync{true};
 std::atomic<bool> syncPending{false};
+std::atomic<bool> syncDeferredUntilVehiclesReady{false};
+std::atomic<bool> hasSeenSyncRequest{false};
+std::atomic<bool> hasCompletedAnySyncAck{false};
 std::atomic<double> pendingSyncTime{0.0};
 std::atomic<double> lastSyncedCarlaTime{-1.0};
 
@@ -82,10 +85,27 @@ std::atomic<double> lastSyncedCarlaTime{-1.0};
 void SendSyncAck(double carlaTime);
 
 void ProcessData_VehiclePosition(const json& vehicleArray) {
+  if (senders.size() < vehicleArray.size() || receivers.size() < vehicleArray.size()) {
+    std::cout << "[INFO] Vehicle state arrived before vehicles_num; initializing "
+              << vehicleArray.size() << " vehicles from vehicles_position payload\n";
+    InitializeVehicles(static_cast<uint32_t>(vehicleArray.size()));
+  }
+
   for (const auto &vehicle : vehicleArray) {
-    int id = vehicle["carla_id"];
+    int id = vehicle.value("carla_id", -1);
+    int index = vehicle.value("id", -1);
+    if (id < 0 || index < 0) {
+      std::cerr << "[WARN] invalid vehicle payload during ProcessData_VehiclePosition"
+                << " id=" << id << " index=" << index << "\n";
+      continue;
+    }
     if(!indexBindToCarlaId) {
-      int index = vehicle["id"];
+      if (static_cast<size_t>(index) >= senders.size() || static_cast<size_t>(index) >= receivers.size()) {
+        std::cerr << "[WARN] vehicle index " << index << " out of range during binding"
+                  << " senders=" << senders.size()
+                  << " receivers=" << receivers.size() << "\n";
+        continue;
+      }
       indexToCarlaId[index] = id;
       carlaIdToIndex[id] = index;
       senders[index]->SetVehicleId(id);
@@ -114,6 +134,13 @@ void ProcessData_VehiclePosition(const json& vehicleArray) {
     // }
   }
   indexBindToCarlaId = true;
+  if (syncDeferredUntilVehiclesReady) {
+    syncDeferredUntilVehiclesReady = false;
+    syncPending = true;
+    std::cout << "[INFO] Vehicle initialization complete; releasing deferred sync request for CARLA t="
+              << pendingSyncTime.load() << "s\n";
+    syncCv.notify_one();
+  }
   std::cout << "[INFO] Received Vehicle Position Msg at " << std::to_string(Simulator::Now().GetMilliSeconds()) << std::endl;
 }
 
@@ -198,6 +225,7 @@ void ProcessData_SyncRequest(const json &syncData) {
 
   double carlaTime = syncData.value("carla_time", 0.0);
   double requestTime = syncData.value("request_time", 0.0);
+  hasSeenSyncRequest = true;
 
   std::cout << "[INFO] Received sync_request: CARLA time = " << carlaTime << "s"
             << ", wall clock request time = " << requestTime << "\n";
@@ -212,6 +240,12 @@ void ProcessData_SyncRequest(const json &syncData) {
   if (syncPending) {
     std::cerr << "[WARN] Previous sync request is still pending, overwriting target time with "
               << carlaTime << "s\n";
+  }
+  if (nVehicles == 0) {
+    syncDeferredUntilVehiclesReady = true;
+    syncPending = false;
+    std::cout << "[INFO] Deferring sync_request until vehicles are initialized from Carla data\n";
+    return;
   }
   syncPending = true;
   syncCv.notify_one();
@@ -355,6 +389,9 @@ void SocketReceiverServerThread() {
 
     if (bytes <= 0) {
       std::cout << "[INFO] Carla disconnected or error on port 5556.\n";
+      running = false;
+      syncPending = true;
+      syncCv.notify_one();
       break;
     }
 
@@ -422,6 +459,7 @@ void SendSyncAck(double carlaTime) {
 
   std::cout << "[INFO] Sent sync_ack: CARLA t=" << carlaTime << "s, NS3 t=" << ns3Time << "s\n";
 
+  hasCompletedAnySyncAck = true;
   syncPending = false;
   syncCv.notify_one();
 }
@@ -533,8 +571,10 @@ int main(int argc, char *argv[]) {
       auto deadline = now + std::chrono::seconds(10);
       while (!syncPending && running) {
         if (syncCv.wait_until(lock, deadline) == std::cv_status::timeout) {
-          std::cerr << "[WARN] Waiting for sync timeout at NS3 time "
-                    << Simulator::Now().GetSeconds() << "s\n";
+          if (hasCompletedAnySyncAck) {
+            std::cerr << "[WARN] Waiting for sync timeout at NS3 time "
+                      << Simulator::Now().GetSeconds() << "s\n";
+          }
           deadline = std::chrono::system_clock::now() + std::chrono::seconds(10);
         }
       }
@@ -589,6 +629,7 @@ int main(int argc, char *argv[]) {
 void InitializeVehicles_DSRC(uint32_t n_vehicles = 3){
   if(nVehicles >= n_vehicles) return;
 
+  const Time appStartTime = std::max(Seconds(0.0), Simulator::Now());
   nVehicles = n_vehicles;
   vehicles = NodeContainer();
   vehicles.Create(n_vehicles);
@@ -659,19 +700,25 @@ void InitializeVehicles_DSRC(uint32_t n_vehicles = 3){
     sender->SetInterval(Seconds(camInterval));
     sender->SetBroadcastRadius(1000);
     vehicles.Get(i)->AddApplication(sender);
-    sender->SetStartTime(Seconds(0.0));
+    sender->SetStartTime(appStartTime);
     sender->SetStopTime(Seconds(simTime));
+    if (appStartTime <= Simulator::Now()) {
+      sender->StartApplication();
+    }
     senders.push_back(sender);
 
     Ptr<CamReceiverDSRC> receiver = CreateObject<CamReceiverDSRC>();
     receiver->SetVehicleId(i + 1);
     receiver->SetIp(addr);
     vehicles.Get(i)->AddApplication(receiver);
-    receiver->SetStartTime(Seconds(0.0));
+    receiver->SetStartTime(appStartTime);
     receiver->SetStopTime(Seconds(simTime));
     receiver->SetReplyFunction([](const std::string& msg) {
       return SendMsgToCarla(msg);
     });
+    if (appStartTime <= Simulator::Now()) {
+      receiver->StartApplication();
+    }
     receivers.push_back(receiver);
   }
 
@@ -702,6 +749,10 @@ void PrintRoutingTable (Ptr<Node> node)
 void InitializeVehicles_NR_V2X_Mode2(uint32_t n_vehicles = 3)
 {
     if(nVehicles >= n_vehicles) return;
+
+    const Time now = Simulator::Now();
+    const Time appStartTime = now;
+    const Time bearerActivationTime = std::max(finalSlBearersActivationTime, now);
 
     nVehicles = n_vehicles;
     vehicles = NodeContainer();
@@ -1121,7 +1172,7 @@ void InitializeVehicles_NR_V2X_Mode2(uint32_t n_vehicles = 3)
         slInfo
       );
       std::cout << "SLINFO.dstL2Id: " << slInfo.m_dstL2Id << std::endl;
-      nrSlHelper->ActivateNrSlBearer(finalSlBearersActivationTime, receiver, tftUnicastReceiver);
+      nrSlHelper->ActivateNrSlBearer(bearerActivationTime, receiver, tftUnicastReceiver);
       for (uint32_t j = 0; j < ueIpIface.GetN(); ++j)
       {
         if (i == j)
@@ -1133,7 +1184,7 @@ void InitializeVehicles_NR_V2X_Mode2(uint32_t n_vehicles = 3)
             destIp, 
             slInfo
         );
-        nrSlHelper->ActivateNrSlBearer(finalSlBearersActivationTime, sender, tftUnicastSender);
+        nrSlHelper->ActivateNrSlBearer(bearerActivationTime, sender, tftUnicastSender);
         // nrSlHelper->ActivateNrSlBearer(finalSlBearersActivationTime, ueVoiceNetDev, tftUnicast);
       }
     }
@@ -1151,8 +1202,11 @@ void InitializeVehicles_NR_V2X_Mode2(uint32_t n_vehicles = 3)
         sender->SetInterval(Seconds(camInterval));
         sender->SetIp(ip);
         vehicles.Get(i)->AddApplication(sender);
-        sender->SetStartTime(slBearersActivationTime);
+        sender->SetStartTime(appStartTime);
         sender->SetStopTime(Seconds(simTime));
+        if (appStartTime <= Simulator::Now()) {
+          sender->StartApplication();
+        }
         senders.push_back(sender);
 
         Ptr<CamReceiverNR> receiver = CreateObject<CamReceiverNR>();
@@ -1160,12 +1214,15 @@ void InitializeVehicles_NR_V2X_Mode2(uint32_t n_vehicles = 3)
         receiver->SetIp(ip);
 
         vehicles.Get(i)->AddApplication(receiver);
-        receiver->SetStartTime(slBearersActivationTime);
+        receiver->SetStartTime(appStartTime);
         receiver->SetStopTime(Seconds(simTime));
         receiver->SetReplyFunction([i](const std::string& msg) {
           // Simulator::Schedule(MilliSeconds(i), [msg] { SendMsgToCarla(msg); });
           return SendMsgToCarla(msg);
         });
+        if (appStartTime <= Simulator::Now()) {
+          receiver->StartApplication();
+        }
         receivers.push_back(receiver);
     }
 

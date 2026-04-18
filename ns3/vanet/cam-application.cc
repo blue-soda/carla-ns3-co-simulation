@@ -330,7 +330,8 @@ void CamSenderNR::StopApplication() {
 
 void CamSenderNR::ScheduleCam(uint32_t bytes, Ipv4Address dest_addr, 
                                uint8_t sc_start, uint8_t sc_num, double tx_power, uint32_t src_L2Id, uint32_t dest_L2Id) { 
-  Simulator::Schedule(MilliSeconds(0), [this, bytes, dest_addr, sc_start, sc_num, tx_power, src_L2Id, dest_L2Id] { 
+  const Time sendDelay = Simulator::Now().IsZero() ? MilliSeconds(20) : MilliSeconds(0);
+  Simulator::Schedule(sendDelay, [this, bytes, dest_addr, sc_start, sc_num, tx_power, src_L2Id, dest_L2Id] { 
     SendCam(bytes, dest_addr, sc_start, sc_num, tx_power, src_L2Id, dest_L2Id); 
   });
 }
