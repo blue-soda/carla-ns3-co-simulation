@@ -30,6 +30,7 @@
 #include <mutex>
 #include <thread>
 #include <csignal>
+#include <condition_variable>
 
 using namespace ns3;
 
@@ -39,8 +40,8 @@ NodeContainer vehicles;
 uint32_t nVehicles = 0;
 double simTime = 10.0;
 double camInterval = 0.1;
-Time slBearersActivationTime = Seconds(1.0);
-Time finalSlBearersActivationTime = slBearersActivationTime + Seconds(0.01);
+Time slBearersActivationTime = MilliSeconds(1);  // Start CAM sender almost immediately
+Time finalSlBearersActivationTime = slBearersActivationTime + MilliSeconds(10);
 
 std::vector<Ptr<CamSender>> senders;
 std::vector<Ptr<CamReceiver>> receivers;
@@ -64,6 +65,21 @@ Ptr<NrSlHelper> NazonoNrSlHelper; //deletion of this var will cause Signals.SIGA
 bool running = true;
 int send_to_carla_fd = -1;
 int totalSubChannel = 0;
+
+long long int total_volume_sent = 0;
+std::vector<int> pkt_id_sent;
+
+// Time synchronization variables
+std::mutex syncMutex;
+std::condition_variable syncCv;
+bool enableTimeSyncFlag = true;  // Use regular bool for command line parsing
+std::atomic<bool> enableTimeSync{true};
+std::atomic<bool> syncPending{false};
+std::atomic<double> pendingSyncTime{0.0};
+std::atomic<double> lastSyncedCarlaTime{-1.0};
+
+// Forward declaration
+void SendSyncAck(double carlaTime);
 
 void ProcessData_VehiclePosition(const json& vehicleArray) {
   for (const auto &vehicle : vehicleArray) {
@@ -110,6 +126,8 @@ void ProcessData_TransferRequests(const json &requests) {
     int source = req["source"].get<int>();
     int target = req["target"].get<int>();
     int size = req["size"].get<int>();
+    int pkt_id = req["pkt_id"].get<int>();
+    pkt_id_sent.push_back(pkt_id);
 
     bool contains_rb = req.contains("sc_start") && req.contains("sc_num");
     if(contains_rb) {
@@ -126,29 +144,35 @@ void ProcessData_TransferRequests(const json &requests) {
       continue;
     }
 
-    std::cout << "[INFO] Transfer request: " << source << " -> " << target
+    std::cout << "[INFO] Transfer request: " << source << " -> " << target << ", pkt_id: " << pkt_id
               << ", size = " << size << " bytes\n";
     
-    if(indexBindToCarlaId) {
-      int source_index = carlaIdToIndex[source];
-      int target_index = carlaIdToIndex[target];
-      if(source_index >= (int)senders.size() || target_index >= (int)senders.size()) {
-        std::cerr << "[ERR] index out range during ProcessData_TransferRequests, source_index = " 
-          << source_index << " id = " << source << ", or target_index = " << target_index << " id = " << target << "\n";
-        continue;
+    if(!indexBindToCarlaId) {
+      std::cerr << "[WARN] indexBindToCarlaId is false during ProcessData_TransferRequests, skipping\n";
+      continue;
+    }
+
+    int source_index = carlaIdToIndex[source];
+    int target_index = carlaIdToIndex[target];
+    if(source_index >= (int)senders.size() || target_index >= (int)senders.size()) {
+      std::cerr << "[ERR] index out range during ProcessData_TransferRequests, source_index = " 
+        << source_index << " id = " << source << ", or target_index = " << target_index << " id = " << target << "\n";
+      continue;
+    }
+    if(senders[source_index]->IsRunning()) {
+      if(contains_rb) {
+        TransferRequestSubChannel sc_req = latestRequestsSubChannel[source];
+        std::cout << "[INFO] sender id: " << source << " sending " << sc_req.size << " bytes to id: " << target << " subChannel_start: " << (uint32_t)sc_req.start << " num: " << (uint32_t)sc_req.num << " tx_power: " << sc_req.tx_power << " W\n";
+        CamSenderNR *sender_nr = GetPointer(DynamicCast<CamSenderNR>(senders[source_index]));
+        sender_nr->ScheduleCam((uint32_t)sc_req.size, vehicleIps[target_index], sc_req.start, sc_req.num, sc_req.tx_power, vehicleL2Ids[source_index] , vehicleL2Ids[target_index]);
+      } else {
+        std::cout << "[INFO] sender id: " << source << " sending " << size << " bytes\n";
+        // 对于没有指定子信道的情况，仍然使用原有接口
+        senders[source_index]->ScheduleCam((uint32_t)size, vehicleIps[target_index]);
       }
-      if(senders[source_index]->IsRunning()) {
-        if(contains_rb) {
-          TransferRequestSubChannel sc_req = latestRequestsSubChannel[source];
-          std::cout << "[INFO] sender id: " << source << " sending " << sc_req.size << " bytes to id: " << target << " subChannel_start: " << (uint32_t)sc_req.start << " num: " << (uint32_t)sc_req.num << " tx_power: " << sc_req.tx_power << " W\n";
-          CamSenderNR *sender_nr = GetPointer(DynamicCast<CamSenderNR>(senders[source_index]));
-          sender_nr->ScheduleCam((uint32_t)sc_req.size, vehicleIps[target_index], sc_req.start, sc_req.num, sc_req.tx_power, vehicleL2Ids[source_index] , vehicleL2Ids[target_index]);
-        } else {
-          std::cout << "[INFO] sender id: " << source << " sending " << size << " bytes\n";
-          // 对于没有指定子信道的情况，仍然使用原有接口
-          senders[source_index]->ScheduleCam((uint32_t)size, vehicleIps[target_index]);
-        }
-      }
+      total_volume_sent += (long long int)size;
+    } else {
+      std::cerr << "[WARN] sender id: " << source << " is not running, skipping\n";
     }
   }
   std::cout << "[INFO] Received Transfer Request Msg at " << std::to_string(Simulator::Now().GetMilliSeconds()) << std::endl;
@@ -164,49 +188,100 @@ void ProcessData_VehiclesNum(const int &num) {
   // std::cout << "[INFO] ProcessData_VehiclesNum: " << nVehicles << "\n";
 }
 
+void ProcessData_SyncRequest(const json &syncData) {
+  if (!enableTimeSync) {
+    double carlaTime = syncData.value("carla_time", 0.0);
+    std::cout << "[INFO] Time sync disabled, sending immediate ack for t=" << carlaTime << "s\n";
+    SendSyncAck(carlaTime);
+    return;
+  }
+
+  double carlaTime = syncData.value("carla_time", 0.0);
+  double requestTime = syncData.value("request_time", 0.0);
+
+  std::cout << "[INFO] Received sync_request: CARLA time = " << carlaTime << "s"
+            << ", wall clock request time = " << requestTime << "\n";
+
+  Time currentTime = Simulator::Now();
+  Time targetTime = Seconds(carlaTime);
+
+  std::cout << "[INFO] NS3 current time: " << currentTime.GetSeconds() << "s, target: " << carlaTime << "s\n";
+
+  pendingSyncTime = carlaTime;
+  lastSyncedCarlaTime = carlaTime;
+  if (syncPending) {
+    std::cerr << "[WARN] Previous sync request is still pending, overwriting target time with "
+              << carlaTime << "s\n";
+  }
+  syncPending = true;
+  syncCv.notify_one();
+}
+
 void ProcessJsonData(const std::string &data) {
   try {
     json msg = json::parse(data);
     std::lock_guard<std::mutex> lock(dataMutex);
 
+    // Debug: print all received message types and key fields
     if (msg.contains("type")) {
       std::string type = msg["type"].get<std::string>();
+      std::cout << "[DEBUG] Received message type: " << type << std::endl;
 
       if (type == "transfer_requests") {
+        std::cout << "[DEBUG] Processing transfer_requests with "
+                  << (msg.contains("transfer_requests") ? msg["transfer_requests"].size() : 0) << " requests\n";
         if (!msg.contains("transfer_requests") || !msg["transfer_requests"].is_array()) {
           std::cerr << "[ERR] transfer_requests message missing 'transfer_requests' array\n";
+          std::cerr << "[DEBUG] Raw msg keys: ";
+          for (auto& el : msg.items()) std::cerr << el.key() << " ";
+          std::cerr << "\n";
           return;
         }
         ProcessData_TransferRequests(msg["transfer_requests"]);
-      } 
+      }
 
       else if (type == "vehicles_position") {
+        std::cout << "[DEBUG] Processing vehicles_position with "
+                  << (msg.contains("vehicles_position") ? msg["vehicles_position"].size() : 0) << " vehicles\n";
         if (!msg.contains("vehicles_position") || !msg["vehicles_position"].is_array()) {
           std::cerr << "[ERR] vehicles_position message missing 'vehicles_position' array\n";
           return;
         }
         ProcessData_VehiclePosition(msg["vehicles_position"]);
-      } 
+      }
 
       else if (type == "vehicles_num") {
+        std::cout << "[DEBUG] Processing vehicles_num: " << msg.value("vehicles_num", -1) << "\n";
         if (!msg.contains("vehicles_num")) {
           std::cerr << "[ERR] vehicles_num message missing 'vehicles_num'\n";
           return;
         }
         ProcessData_VehiclesNum(msg["vehicles_num"].get<int>());
-      } 
+      }
+
+      else if (type == "sync_request") {
+        std::cout << "[DEBUG] Processing sync_request with carla_time: "
+                  << msg["sync_request"].value("carla_time", -1.0) << "\n";
+        if (!msg.contains("sync_request")) {
+          std::cerr << "[ERR] sync_request message missing 'sync_request' data\n";
+          return;
+        }
+        ProcessData_SyncRequest(msg["sync_request"]);
+      }
 
       else{
-        std::cerr << "[ERR] Wrong type\n";
+        std::cerr << "[ERR] Wrong type: " << type << "\n";
+        std::cerr << "[DEBUG] Full raw message: " << data.substr(0, 500) << "\n";
       }
-    } 
+    }
 
     else {
       std::cerr << "[ERR] Message does not contain 'type'\n";
+      std::cerr << "[DEBUG] Raw message without type: " << data.substr(0, 500) << "\n";
     }
   }
   catch (json::exception &e) {
-    std::cerr << "[ERR] JSON parse error: " << e.what() << "; input: " << data << "\n"; 
+    std::cerr << "[ERR] JSON parse error: " << e.what() << "; input: " << data.substr(0, 200) << "\n";
   }
 
   if (!firstDataReceived) {
@@ -219,8 +294,10 @@ void ProcessReceivedData(std::string &receive_buffer) {
   size_t pos;
   while ((pos = receive_buffer.find("\n\r")) != std::string::npos) {
     std::string complete_message = receive_buffer.substr(0, pos);
-    receive_buffer.erase(0, pos + 1);
+    receive_buffer.erase(0, pos + 2);  // Skip past "\n\r" which is 2 chars
     if (!complete_message.empty()) {
+      // Debug: print raw message before processing
+      std::cout << "[DEBUG] Raw incoming: " << complete_message.substr(0, std::min((size_t)300, complete_message.size())) << "\n";
       try {
           ProcessJsonData(complete_message);
       } catch (const std::exception& e) {
@@ -311,8 +388,15 @@ void UpdateVehiclePositions() {
         mobility->SetVelocity(latestVelocities[id]);
       }
     }
+    // Always schedule UpdateVehiclePositions, but the interval depends on sync mode
     if (running) {
-      Simulator::Schedule(Seconds(0.05), &UpdateVehiclePositions);
+      if (enableTimeSync) {
+        // In sync mode, update every 0.05s (CARLA tick interval)
+        Simulator::Schedule(Seconds(0.05), &UpdateVehiclePositions);
+      } else {
+        // In non-sync mode, also update every 0.05s
+        Simulator::Schedule(Seconds(0.05), &UpdateVehiclePositions);
+      }
     }
   } 
   catch(std::exception &e) { std::cerr << "[ERR] UpdateVehiclePositions error: " << e.what() << "\n"; }
@@ -323,6 +407,23 @@ void UpdateVehiclePositions() {
 void SendSimulationEndSignal() {
   std::string msg = R"({"type": "simulation_end"})";
   SendMsgToCarla(msg, false);
+}
+
+void SendSyncAck(double carlaTime) {
+  double ns3Time = Simulator::Now().GetSeconds();
+
+  json ack;
+  ack["type"] = "sync_ack";
+  ack["carla_time"] = carlaTime;
+  ack["ns3_time"] = ns3Time;
+
+  std::string msg = ack.dump();
+  SendMsgToCarla(msg, true);
+
+  std::cout << "[INFO] Sent sync_ack: CARLA t=" << carlaTime << "s, NS3 t=" << ns3Time << "s\n";
+
+  syncPending = false;
+  syncCv.notify_one();
 }
 
 void SendMsgToCarla(const std::string &msg, bool try_reconnect = true) {
@@ -377,10 +478,16 @@ void SocketSenderServerDisconnect() {
     send_to_carla_fd = -1;
     std::cout << "[INFO] Disconnected from Carla on port 5557.\n";
   }
+  std::cout << "[INFO] pkt_id sent to Carla: \n";
+  for(auto& id : pkt_id_sent) {
+    std::cout << id << ", ";
+  }
+  std::cout << "[INFO] Total volume sent to Carla: " << total_volume_sent << " bytes\n";
 }
 
 void HandleSigInt(int signum) {
     std::cout << "\n[INFO] Received SIGINT (Ctrl+C), exiting gracefully...\n";
+    syncCv.notify_one();  // Wake up main thread if waiting
     Simulator::Stop();
     running = false;
     SocketSenderServerDisconnect();
@@ -398,7 +505,9 @@ int main(int argc, char *argv[]) {
   CommandLine cmd;
   cmd.AddValue("simTime", "Simulation time (s)", simTime);
   cmd.AddValue("camInterval", "CAM interval (s)", camInterval);
+  cmd.AddValue("enableTimeSync", "Enable time synchronization with CARLA (default: true)", enableTimeSyncFlag);
   cmd.Parse(argc, argv);
+  enableTimeSync = enableTimeSyncFlag;
 
   Simulator::SetImplementation(CreateObject<RealtimeSimulatorImpl>());
   std::thread serverReceiverThread(SocketReceiverServerThread);
@@ -410,9 +519,63 @@ int main(int argc, char *argv[]) {
   SocketSenderServerConnect();
 
   std::cout << "[INFO] Starting simulation!\n";
-  Simulator::Schedule(Seconds(0.1), &UpdateVehiclePositions);
-  Simulator::Stop(Seconds(simTime));
-  Simulator::Run();
+  std::cout << "[INFO] Time sync " << (enableTimeSync ? "ENABLED" : "DISABLED") << "\n";
+
+  if (enableTimeSync) {
+    // Event-driven synchronized simulation
+    // CARLA controls when NS3 advances by sending sync_requests
+    std::cout << "[INFO] Starting synchronized simulation mode\n";
+    Simulator::Schedule(Seconds(0.1), &UpdateVehiclePositions);
+
+    while (running && Simulator::Now().GetSeconds() < simTime) {
+      std::unique_lock<std::mutex> lock(syncMutex);
+      auto now = std::chrono::system_clock::now();
+      auto deadline = now + std::chrono::seconds(10);
+      while (!syncPending && running) {
+        if (syncCv.wait_until(lock, deadline) == std::cv_status::timeout) {
+          std::cerr << "[WARN] Waiting for sync timeout at NS3 time "
+                    << Simulator::Now().GetSeconds() << "s\n";
+          deadline = std::chrono::system_clock::now() + std::chrono::seconds(10);
+        }
+      }
+      if (!running) {
+        break;
+      }
+
+      const double requestedCarlaTime = pendingSyncTime.load();
+      lock.unlock();
+
+      const Time currentTime = Simulator::Now();
+      const Time requestedTarget = Seconds(requestedCarlaTime);
+      const Time cappedTarget = std::min(requestedTarget, Seconds(simTime));
+
+      if (cappedTarget <= currentTime) {
+        std::cout << "[INFO] Target time already passed, sending immediate sync_ack"
+                  << " (NS3 time: " << currentTime.GetSeconds() << "s, CARLA target: "
+                  << requestedCarlaTime << "s)\n";
+        SendSyncAck(requestedCarlaTime);
+        continue;
+      }
+
+      const Time delta = cappedTarget - currentTime;
+      std::cout << "[INFO] Advancing NS3 from " << currentTime.GetSeconds()
+                << "s to " << cappedTarget.GetSeconds() << "s (delta "
+                << delta.GetSeconds() << "s)\n";
+
+      Simulator::Schedule(delta, &SendSyncAck, requestedCarlaTime);
+      Simulator::Stop(delta + NanoSeconds(1));
+      Simulator::Run();
+
+      std::cout << "[INFO] Simulator::Run() returned, syncPending=" << syncPending
+                << ", NS3 time: " << Simulator::Now().GetSeconds() << "s\n";
+    }
+    std::cout << "[INFO] Sync simulation ended at NS3 time: " << Simulator::Now().GetSeconds() << "s\n";
+  } else {
+    // Original behavior: schedule events and run freely
+    Simulator::Schedule(Seconds(0.1), &UpdateVehiclePositions);
+    Simulator::Stop(Seconds(simTime));
+    Simulator::Run();
+  }
 
   running = false;
   serverReceiverThread.join();

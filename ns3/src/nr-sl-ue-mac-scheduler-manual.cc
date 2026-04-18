@@ -36,6 +36,13 @@ NrSlUeMacSchedulerManual::AddCarlaTxCommand(const CarlaTxCommand& cmd)
     // std::cout << "[DEBUG] NrSlUeMacSchedulerManual::AddCarlaTxCommand called\n";
     std::lock_guard<std::mutex> lock(m_cmdMutex);
     m_carlaTxCommandsByDst[cmd.dstL2Id].push(cmd);
+    std::cout << "[MANUAL_CMD_ADD] src=" << cmd.srcL2Id
+              << " dst=" << cmd.dstL2Id
+              << " scStart=" << +cmd.slSubchannelStart
+              << " scSize=" << +cmd.slSubchannelSize
+              << " maxDataSize=" << cmd.maxDataSize
+              << " queueSize=" << m_carlaTxCommandsByDst[cmd.dstL2Id].size()
+              << std::endl;
 }
 
 // 清空指令
@@ -259,6 +266,13 @@ NrSlUeMacSchedulerManual::LogicalChannelPrioritization(
         {
             manualCmd = dstCmdIt->second.front(); // 获取队列头命令
             uint32_t srcL2Id = GetMac()->GetSrcL2Id();
+            std::cout << "[MANUAL_CMD_CHECK] macSrc=" << srcL2Id
+                      << " selectedDst=" << dstIdSelected
+                      << " headSrc=" << manualCmd.srcL2Id
+                      << " headDst=" << manualCmd.dstL2Id
+                      << " headBytes=" << manualCmd.maxDataSize
+                      << " queueSize=" << dstCmdIt->second.size()
+                      << std::endl;
             if (manualCmd.srcL2Id == srcL2Id)
             {
                 // std::cout << "[DEBUG] Manual scheduling command matched: srcL2Id=" << manualCmd.srcL2Id 
@@ -411,12 +425,25 @@ NrSlUeMacSchedulerManual::LogicalChannelPrioritization(
         //             << (cmdToUpdate.maxDataSize - int(allocatedSize)) << ") bytes" << std::endl;
         NS_LOG_DEBUG("Updated maxDataSize for cmd: (" << cmdToUpdate.maxDataSize << " --> "
                     << (cmdToUpdate.maxDataSize - int(allocatedSize)) << ") bytes");
+        std::cout << "[MANUAL_CMD_CONSUME] src=" << cmdToUpdate.srcL2Id
+                  << " dst=" << cmdToUpdate.dstL2Id
+                  << " before=" << cmdToUpdate.maxDataSize
+                  << " allocated=" << allocatedSize
+                  << " after=" << (cmdToUpdate.maxDataSize - int(allocatedSize))
+                  << std::endl;
         cmdToUpdate.maxDataSize -= int(allocatedSize);
         // 小于 0 则 pop 队列头命令
         if (cmdToUpdate.maxDataSize <= 0) {
             // std::cout << "[DEBUG] maxDataSize <= 0, pop command: srcL2Id=" << cmdToUpdate.srcL2Id<< ", dstL2Id=" << cmdToUpdate.dstL2Id << std::endl;
             NS_LOG_DEBUG("maxDataSize <= 0, pop command: srcL2Id=" << cmdToUpdate.srcL2Id<< ", dstL2Id=" << cmdToUpdate.dstL2Id);
+            std::cout << "[MANUAL_CMD_POP] src=" << cmdToUpdate.srcL2Id
+                      << " dst=" << cmdToUpdate.dstL2Id
+                      << " remainingQueueBeforePop=" << dstCmdIt->second.size()
+                      << std::endl;
             dstCmdIt->second.pop();
+            std::cout << "[MANUAL_CMD_POP_DONE] dst=" << dstIdSelected
+                      << " remainingQueueAfterPop=" << dstCmdIt->second.size()
+                      << std::endl;
         }
     }
     return dstIdSelected;

@@ -24,6 +24,7 @@
 #include <ns3/trace-source-accessor.h>
 
 #include <cmath>
+#include <iostream>
 #include <unordered_set>
 
 namespace ns3
@@ -2284,6 +2285,8 @@ NrSpectrumPhy::RxSlPscch(std::vector<uint32_t> paramIndexes)
 
         bool corrupt = false;
         bool corruptDecode = false;
+        bool corruptCollision = false;
+        bool corruptDecodedOverlap = false;
         uint8_t pscchMcs = 0 /*using QPSK*/;
         Ptr<NrErrorModelOutput> outputEmForCtrl;
 
@@ -2301,6 +2304,7 @@ NrSpectrumPhy::RxSlPscch(std::vector<uint32_t> paramIndexes)
                 if (collidedRbBitmap.find(*rbIt) != collidedRbBitmap.end())
                 {
                     corrupt = true;
+                    corruptCollision = true;
                     NS_LOG_DEBUG(this << " RB " << *rbIt << " has collided");
                     break;
                 }
@@ -2311,8 +2315,7 @@ NrSpectrumPhy::RxSlPscch(std::vector<uint32_t> paramIndexes)
                 {
                     NS_LOG_DEBUG(*rbIt << " TB with the similar RB has already been decoded. Avoid "
                                           "to decode it again!");
-                    corrupt = true;
-                    break;
+                    corruptDecodedOverlap = true;
                 }
             }
 
@@ -2387,6 +2390,11 @@ NrSpectrumPhy::RxSlPscch(std::vector<uint32_t> paramIndexes)
             DynamicCast<NrSpectrumSignalParametersSlCtrlFrame>(
                 m_slRxSigParamInfo.at(paramIndex).params);
         Ptr<Packet> packet = ctrlParams->packetBurst->GetPackets().front();
+        NrSlSciF1aHeader sciHeader;
+        packet->PeekHeader(sciHeader);
+        NrSlMacPduTag tag;
+        bool tagFound = packet->PeekPacketTag(tag);
+        NS_ABORT_MSG_IF(!tagFound, "Did not find NrSlMacPduTag");
         if (!corrupt)
         {
             error = false; // at least one control packet is OK
@@ -2395,17 +2403,42 @@ NrSpectrumPhy::RxSlPscch(std::vector<uint32_t> paramIndexes)
             pduInfo.packet = packet;
             pduInfo.psd = psd;
             rxControlMessageOkList.push_back(pduInfo);
+            std::cout << "[PSCCH_DECODE_OK] txRnti=" << tag.GetRnti()
+                      << " dstL2Id=" << tag.GetDstL2Id()
+                      << " scStart=" << sciHeader.GetIndexStartSubChannel()
+                      << " scLen=" << sciHeader.GetLengthSubChannel()
+                      << " rbStart=" << m_slRxSigParamInfo.at(paramIndex).rbBitmap.front()
+                      << " rbEnd=" << m_slRxSigParamInfo.at(paramIndex).rbBitmap.back()
+                      << " sinrAvg=" << ctrlMsgIt.sinrAvg
+                      << " sinrMin=" << ctrlMsgIt.sinrMin
+                      << " tbler=" << (m_slCtrlErrorModelEnabled ? outputEmForCtrl->m_tbler : 0.0)
+                      << " frame=" << tag.GetSfn().GetFrame()
+                      << " subframe=" << static_cast<uint32_t>(tag.GetSfn().GetSubframe())
+                      << " slot=" << static_cast<uint32_t>(tag.GetSfn().GetSlot()) << std::endl;
             // Store the indices of the decoded RBs
             rbDecodedBitmap.insert(m_slRxSigParamInfo.at(paramIndex).rbBitmap.begin(),
                                    m_slRxSigParamInfo.at(paramIndex).rbBitmap.end());
         }
+        else
+        {
+            std::cout << "[PSCCH_DECODE_FAIL] txRnti=" << tag.GetRnti()
+                      << " dstL2Id=" << tag.GetDstL2Id()
+                      << " scStart=" << sciHeader.GetIndexStartSubChannel()
+                      << " scLen=" << sciHeader.GetLengthSubChannel()
+                      << " rbStart=" << m_slRxSigParamInfo.at(paramIndex).rbBitmap.front()
+                      << " rbEnd=" << m_slRxSigParamInfo.at(paramIndex).rbBitmap.back()
+                      << " sinrAvg=" << ctrlMsgIt.sinrAvg
+                      << " sinrMin=" << ctrlMsgIt.sinrMin
+                      << " tbler=" << (m_slCtrlErrorModelEnabled ? outputEmForCtrl->m_tbler : 0.0)
+                      << " reason=" << (corruptCollision ? "collision"
+                                      : (corruptDecodedOverlap ? "decoded_overlap"
+                                      : (corruptDecode ? "error_model" : "other")))
+                      << " frame=" << tag.GetSfn().GetFrame()
+                      << " subframe=" << static_cast<uint32_t>(tag.GetSfn().GetSubframe())
+                      << " slot=" << static_cast<uint32_t>(tag.GetSfn().GetSlot()) << std::endl;
+        }
 
         // Add PSCCH trace.
-        NrSlSciF1aHeader sciHeader;
-        packet->PeekHeader(sciHeader);
-        NrSlMacPduTag tag;
-        bool tagFound = packet->PeekPacketTag(tag);
-        NS_ABORT_MSG_IF(!tagFound, "Did not find NrSlMacPduTag");
         SlRxCtrlPacketTraceParams traceParams;
         traceParams.m_timeMs = Simulator::Now().GetSeconds() * 1000.0;
         traceParams.m_cellId = ueRx->GetPhy(GetBwpId())->GetCellId();
@@ -2649,6 +2682,11 @@ NrSpectrumPhy::RxSlPssch(std::vector<uint32_t> paramIndexes)
                 NS_LOG_DEBUG(this << " PSSCH SCI stage 2 decoding failed, errorRate "
                                   << tbIt.second.m_outputEmForSci2->m_tbler);
                 m_slSci2aDecodeFailures++;
+                std::cout << "[SCI2_DECODE_FAIL] txRnti=" << tbIt.first
+                          << " srcL2Id=" << sciF2a.GetSrcId()
+                          << " dstL2Id=" << sciF2a.GetDstId()
+                          << " harqId=" << static_cast<uint32_t>(sciF2a.GetHarqId())
+                          << " tbSize=" << tbIt.second.m_expected.m_tbSize << std::endl;
                 // If SCI stage 2 is corrupted, data is also corrupted.
                 tbIt.second.m_isCorrupted = true;
 
@@ -2748,6 +2786,15 @@ NrSpectrumPhy::RxSlPssch(std::vector<uint32_t> paramIndexes)
                 {
                     NS_LOG_DEBUG(this << " PSSCH TB decoding failed, errorRate "
                                       << tbIt.second.m_outputEmForData->m_tbler);
+                    std::cout << "[PSSCH_DECODE_FAIL] txRnti=" << tbIt.first
+                              << " srcL2Id=" << sciF2a.GetSrcId()
+                              << " dstL2Id=" << sciF2a.GetDstId()
+                              << " harqId=" << +sciF2a.GetHarqId()
+                              << " tbSize=" << tbIt.second.m_expected.m_tbSize
+                              << " tbler=" << tbIt.second.m_outputEmForData->m_tbler
+                              << " sinrAvg=" << tbIt.second.m_sinrAvg
+                              << " sinrMin=" << tbIt.second.m_sinrMin
+                              << std::endl;
                     m_slTbDecodeFailures++;
                     tbIt.second.m_isCorrupted = true;
                 }
@@ -2756,6 +2803,15 @@ NrSpectrumPhy::RxSlPssch(std::vector<uint32_t> paramIndexes)
                     NS_LOG_DEBUG(this << " PSSCH TB decoding successful, errorRate "
                                       << tbIt.second.m_outputEmForData->m_tbler << " data corrupt "
                                       << tbIt.second.m_isCorrupted);
+                    std::cout << "[PSSCH_DECODE_OK] txRnti=" << tbIt.first
+                              << " srcL2Id=" << sciF2a.GetSrcId()
+                              << " dstL2Id=" << sciF2a.GetDstId()
+                              << " harqId=" << +sciF2a.GetHarqId()
+                              << " tbSize=" << tbIt.second.m_expected.m_tbSize
+                              << " tbler=" << tbIt.second.m_outputEmForData->m_tbler
+                              << " sinrAvg=" << tbIt.second.m_sinrAvg
+                              << " sinrMin=" << tbIt.second.m_sinrMin
+                              << std::endl;
                     tbIt.second.m_isCorrupted = false;
                     m_harqPhyModule->IndicatePrevDecoded(tbIt.first, sciF2a.GetHarqId());
                 }
@@ -3075,16 +3131,22 @@ NrSpectrumPhy::ClearExpectedSlTb()
 bool
 operator==(const NrSpectrumPhy::SlCtrlSigParamInfo& a, const NrSpectrumPhy::SlCtrlSigParamInfo& b)
 {
-    return (a.sinrAvg == b.sinrAvg);
+    const bool bothNan = std::isnan(a.sinrAvg) && std::isnan(b.sinrAvg);
+    return a.index == b.index && (bothNan || a.sinrAvg == b.sinrAvg);
 }
 
 bool
 operator<(const NrSpectrumPhy::SlCtrlSigParamInfo& a, const NrSpectrumPhy::SlCtrlSigParamInfo& b)
 {
-    // we want by decreasing SINR. The second condition will make
-    // sure that the two TBs with equal SINR are inserted in increasing
-    // order of the index.
-    return (a.sinrAvg > b.sinrAvg) || (a.index < b.index);
+    // Order by decreasing SINR. Treat non-finite values as the lowest priority and
+    // use the packet index only as a deterministic tie-breaker.
+    const double aSinr = std::isfinite(a.sinrAvg) ? a.sinrAvg : -std::numeric_limits<double>::infinity();
+    const double bSinr = std::isfinite(b.sinrAvg) ? b.sinrAvg : -std::numeric_limits<double>::infinity();
+    if (aSinr != bSinr)
+    {
+        return aSinr > bSinr;
+    }
+    return a.index < b.index;
 }
 
 } // namespace ns3
