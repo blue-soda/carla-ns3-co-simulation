@@ -39,6 +39,7 @@ NS_LOG_COMPONENT_DEFINE("CarlaFixedIdVanet");
 NodeContainer vehicles;
 uint32_t nVehicles = 0;
 double simTime = 10.0;
+std::string carlaHost = "auto";
 double camInterval = 0.1;
 Time slBearersActivationTime = MilliSeconds(1);  // Start CAM sender almost immediately
 Time finalSlBearersActivationTime = slBearersActivationTime + MilliSeconds(10);
@@ -80,6 +81,10 @@ std::atomic<bool> hasSeenSyncRequest{false};
 std::atomic<bool> hasCompletedAnySyncAck{false};
 std::atomic<double> pendingSyncTime{0.0};
 std::atomic<double> lastSyncedCarlaTime{-1.0};
+
+bool IsAutoCarlaHost() {
+  return carlaHost.empty() || carlaHost == "auto";
+}
 
 // Forward declaration
 void SendSyncAck(double carlaTime);
@@ -374,34 +379,67 @@ void SocketReceiverServerThread() {
   }
 
   std::cout << "[INFO] Waiting for Carla on port 5556...\n";
-  const int client_fd = accept(server_fd, reinterpret_cast<sockaddr*>(&address), reinterpret_cast<socklen_t*>(&addrlen));
-  if (client_fd < 0) {
-    perror("accept failed");
-    close(server_fd);
-    return;
-  }
-
-  std::cout << "[INFO] Carla connected on port 5556.\n";
-
   while (running) {
-    memset(buffer, 0, sizeof(buffer));
-    const ssize_t bytes = recv(client_fd, buffer, sizeof(buffer) - 1, 0);
-
-    if (bytes <= 0) {
-      std::cout << "[INFO] Carla disconnected or error on port 5556.\n";
-      running = false;
-      syncPending = true;
-      syncCv.notify_one();
-      break;
+    const int client_fd =
+        accept(server_fd, reinterpret_cast<sockaddr*>(&address), reinterpret_cast<socklen_t*>(&addrlen));
+    if (client_fd < 0) {
+      if (!running) {
+        break;
+      }
+      perror("accept failed");
+      std::this_thread::sleep_for(std::chrono::milliseconds(200));
+      continue;
     }
 
-    buffer[bytes] = '\0';
+    char peerIp[INET_ADDRSTRLEN] = {0};
+    const char* peerIpText = inet_ntop(AF_INET, &address.sin_addr, peerIp, sizeof(peerIp));
+    if (peerIpText != nullptr) {
+      std::cout << "[INFO] Carla connected on port 5556 from " << peerIpText << ".\n";
+      if (IsAutoCarlaHost()) {
+        carlaHost = peerIpText;
+        std::cout << "[INFO] Auto-detected Carla callback host as " << carlaHost << ".\n";
+      }
+    } else {
+      std::cout << "[INFO] Carla connected on port 5556.\n";
+    }
 
-    receive_buffer_string = std::string(buffer);
-    ProcessReceivedData(receive_buffer_string);
+    while (running) {
+      // Use select() with a timeout to avoid permanent blocking in recv().
+      fd_set read_fds;
+      FD_ZERO(&read_fds);
+      FD_SET(client_fd, &read_fds);
+      struct timeval tv;
+      tv.tv_sec = 2;
+      tv.tv_usec = 0;
+
+      int select_result = select(client_fd + 1, &read_fds, nullptr, nullptr, &tv);
+      if (select_result < 0) {
+        std::cerr << "[ERR] select failed in SocketReceiverServerThread\n";
+        break;
+      }
+      if (select_result == 0) {
+        continue;
+      }
+
+      memset(buffer, 0, sizeof(buffer));
+      const ssize_t bytes = recv(client_fd, buffer, sizeof(buffer) - 1, 0);
+
+      if (bytes <= 0) {
+        std::cout << "[INFO] Carla disconnected or error on port 5556; waiting for reconnection.\n";
+        syncPending = false;
+        syncCv.notify_one();
+        break;
+      }
+
+      buffer[bytes] = '\0';
+      receive_buffer_string = std::string(buffer);
+      ProcessReceivedData(receive_buffer_string);
+    }
+
+    close(client_fd);
+    std::cout << "[INFO] Receiver connection on port 5556 closed.\n";
   }
 
-  close(client_fd);
   close(server_fd);
 }
 
@@ -498,7 +536,7 @@ void SocketSenderServerConnect() {
 
   sockaddr_in address{};
   address.sin_family = AF_INET;
-  address.sin_addr.s_addr = inet_addr("127.0.0.1");
+  address.sin_addr.s_addr = inet_addr(carlaHost.c_str());
   address.sin_port = htons(5557);
 
   if (connect(send_to_carla_fd, reinterpret_cast<sockaddr*>(&address), sizeof(address)) < 0) {
@@ -544,6 +582,7 @@ int main(int argc, char *argv[]) {
   cmd.AddValue("simTime", "Simulation time (s)", simTime);
   cmd.AddValue("camInterval", "CAM interval (s)", camInterval);
   cmd.AddValue("enableTimeSync", "Enable time synchronization with CARLA (default: true)", enableTimeSyncFlag);
+  cmd.AddValue("carlaHost", "CARLA callback host IP (default: auto-detect from the 5556 peer)", carlaHost);
   cmd.Parse(argc, argv);
   enableTimeSync = enableTimeSyncFlag;
 
