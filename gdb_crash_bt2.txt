@@ -1,0 +1,63 @@
+[Thread debugging using libthread_db enabled]
+Using host libthread_db library "/lib/x86_64-linux-gnu/libthread_db.so.1".
+[New Thread 0x7ffff21ff6c0 (LWP 400)]
+[INFO] Waiting for first Carla data...
+[INFO] Waiting for Carla on port 5556...
+[INFO] Carla connected on port 5556.
+[DEBUG] Raw incoming: {"type": "sync_request", "sync_request": {"carla_time": 0.05, "request_time": 1776482640.806139}}
+[DEBUG] Received message type: sync_request
+[DEBUG] Processing sync_request with carla_time: 0.05
+[INFO] Received sync_request: CARLA time = 0.05s, wall clock request time = 1.77648e+09
+[INFO] NS3 current time: 0s, target: 0.05s
+[INFO] First data received from Carla!
+[INFO] Connecting to Carla on port 5557...
+[INFO] Connected to Carla on port 5557.
+[INFO] Starting simulation!
+[INFO] Time sync ENABLED
+[INFO] Starting synchronized simulation mode
+[INFO] Advancing NS3 from 0s to 0.05s (delta 0.05s)
+[INFO] SendMsgToCarla: {"carla_time":0.05,"ns3_time":0.05,"type":"sync_ack"}, send_to_carla_fd: 5
+[INFO] Sent sync_ack: CARLA t=0.05s, NS3 t=0.05s
+[INFO] Simulator::Run() returned, syncPending=0, NS3 time: 0.05s
+[DEBUG] Raw incoming: {"type": "vehicles_position", "vehicles_position": [{"id": 0, "carla_id": 1, "position": {"x": 8.0, "y": -30.31, "z": 0.03}, "velocity": {"x": 0.0, "y": -0.0, "z": 0.02}, "heading": -90.0, "speed": 0.02}, {"id": 1, "carla_id": 2, "position": {"x": -6.64, "y": -38.59, "z": 0.01}, "velocity": {"x": -0
+[DEBUG] Received message type: vehicles_position
+
+Thread 2 "ns3.42-main-def" received signal SIGSEGV, Segmentation fault.
+[Switching to Thread 0x7ffff21ff6c0 (LWP 400)]
+0x0000555555577d5f in ProcessData_VehiclePosition (vehicleArray=...) at /usr/include/c++/13/bits/stl_vector.h:1126
+1126	      operator[](size_type __n) _GLIBCXX_NOEXCEPT
+#0  0x0000555555577d5f in ProcessData_VehiclePosition (vehicleArray=...) at /usr/include/c++/13/bits/stl_vector.h:1126
+        index = 0
+        id = 1
+        pos = {x = 6.9533392299120555e-310, y = 6.9533443061262933e-310, z = 4.6355705482965644e-310}
+        vel = {x = 6.9531436082559078e-310, y = -nan(0xfffffffffff60), z = 0}
+        vehicle = @0x7fffec002090: {<nlohmann::json_abi_v3_11_3::detail::json_default_base> = {<No data fields>}, m_data = {m_type = nlohmann::json_abi_v3_11_3::detail::value_t::object, m_value = {object = 0x7fffec000ea0, array = 0x7fffec000ea0, string = 0x7fffec000ea0, binary = 0x7fffec000ea0, boolean = 160, number_integer = 140737152814752, number_unsigned = 140737152814752, number_float = 6.9533392299278656e-310}}}
+        __for_range = <optimized out>
+        __for_begin = {m_object = 0x7fffec000da0, m_it = {object_iterator = non-dereferenceable iterator for associative container, array_iterator = {<nlohmann::json_abi_v3_11_3::detail::json_default_base> = {<No data fields>}, m_data = {m_type = nlohmann::json_abi_v3_11_3::detail::value_t::object, m_value = {object = 0x7fffec000ea0, array = 0x7fffec000ea0, string = 0x7fffec000ea0, binary = 0x7fffec000ea0, boolean = 160, number_integer = 140737152814752, number_unsigned = 140737152814752, number_float = 6.9533392299278656e-310}}}, primitive_iterator = {static begin_value = 0, static end_value = 1, m_it = -9223372036854775808}}}
+        __for_end = {m_object = 0x7fffec000da0, m_it = {object_iterator = non-dereferenceable iterator for associative container, array_iterator = {<nlohmann::json_abi_v3_11_3::detail::json_default_base> = {<No data fields>}, m_data = {m_type = nlohmann::json_abi_v3_11_3::detail::value_t::null, m_value = {object = 0x45, array = 0x45, string = 0x45, binary = 0x45, boolean = 69, number_integer = 69, number_unsigned = 69, number_float = 3.4090529563046012e-322}}}, primitive_iterator = {static begin_value = 0, static end_value = 1, m_it = -9223372036854775808}}}
+#1  0x000055555557c640 in ProcessJsonData (data="{\"type\": \"vehicles_position\", \"vehicles_position\": [{\"id\": 0, \"carla_id\": 1, \"position\": {\"x\": 8.0, \"y\": -30.31, \"z\": 0.03}, \"velocity\": {\"x\": 0.0, \"y\": -0.0, \"z\": 0.02}, \"heading\": -90.0, \"speed\": 0."...) at /home/sakakibara/Workspace/carla-ns3-co-simulation/ns-3-dev/scratch/vanet/main.cc:250
+        type = "vehicles_position"
+        msg = {<nlohmann::json_abi_v3_11_3::detail::json_default_base> = {<No data fields>}, m_data = {m_type = nlohmann::json_abi_v3_11_3::detail::value_t::object, m_value = {object = 0x7fffec000ce0, array = 0x7fffec000ce0, string = 0x7fffec000ce0, binary = 0x7fffec000ce0, boolean = 224, number_integer = 140737152814304, number_unsigned = 140737152814304, number_float = 6.9533392299057314e-310}}}
+        lock = <optimized out>
+#2  0x000055555557cc19 in ProcessReceivedData (receive_buffer="") at /home/sakakibara/Workspace/carla-ns3-co-simulation/ns-3-dev/scratch/vanet/main.cc:302
+        complete_message = "{\"type\": \"vehicles_position\", \"vehicles_position\": [{\"id\": 0, \"carla_id\": 1, \"position\": {\"x\": 8.0, \"y\": -30.31, \"z\": 0.03}, \"velocity\": {\"x\": 0.0, \"y\": -0.0, \"z\": 0.02}, \"heading\": -90.0, \"speed\": 0."...
+        pos = <optimized out>
+#3  0x000055555557cedf in SocketReceiverServerThread () at /home/sakakibara/Workspace/carla-ns3-co-simulation/ns-3-dev/scratch/vanet/main.cc:364
+        bytes = <optimized out>
+        address = {sin_family = 2, sin_port = 20948, sin_addr = {s_addr = 16777343}, sin_zero = "\000\000\000\000\000\000\000"}
+        addrlen = 16
+        buffer = "{\"type\": \"vehicles_position\", \"vehicles_position\": [{\"id\": 0, \"carla_id\": 1, \"position\": {\"x\": 8.0, \"y\": -30.31, \"z\": 0.03}, \"velocity\": {\"x\": 0.0, \"y\": -0.0, \"z\": 0.02}, \"heading\": -90.0, \"speed\": 0."...
+        receive_buffer_string = ""
+        server_fd = 3
+        opt = 1
+        client_fd = 4
+#4  0x00007ffff52ecdb4 in ?? () from /lib/x86_64-linux-gnu/libstdc++.so.6
+No symbol table info available.
+#5  0x00007ffff4e9caa4 in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:447
+        ret = <optimized out>
+        pd = <optimized out>
+        out = <optimized out>
+        unwind_buf = {cancel_jmp_buf = {{jmp_buf = {140737255569088, 1484078847232387037, 140737255569088, -160, 0, 140737488347664, 1484078847177861085, 1484090238273791965}, mask_was_saved = 0}}, priv = {pad = {0x0, 0x0, 0x0, 0x0}, data = {prev = 0x0, cleanup = 0x0, canceltype = 0}}}
+        not_first_call = <optimized out>
+#6  0x00007ffff4f29c6c in clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+No locals.
